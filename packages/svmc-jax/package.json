@@ -1,0 +1,6 @@
+{
+  "name": "@diffsvmc/svmc-jax",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Anchor package for the Python JAX implementation (managed by pip/hatch)"
+}

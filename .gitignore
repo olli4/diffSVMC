@@ -1,0 +1,30 @@
+node_modules/
+dist/
+*.tgz
+tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Reference data (generated, large)
+reference-data/generated/
+
+# IDE
+.vscode/settings.json
+
+# OS
+.DS_Store
+
+# Fortran build artifacts
+svmc-fortran/src/SVMC
+svmc-fortran/src/*.o
+svmc-fortran/src/*.mod
+packages/svmc-ref/*.o
+packages/svmc-ref/*.mod
+packages/svmc-ref/harness
+
+# Vitest browser-mode screenshot artifacts
+__screenshots__/

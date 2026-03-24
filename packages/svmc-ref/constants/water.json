@@ -1,0 +1,5 @@
+{
+  "_source": "vendor/SVMC/src/wrapper_yasso.f90 — exponential_smooth_met",
+  "alpha_smooth1": 0.01,
+  "alpha_smooth2": 0.0016
+}

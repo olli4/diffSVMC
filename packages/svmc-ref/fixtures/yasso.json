@@ -1,0 +1,79 @@
+{
+  "inputs_to_fractions": [
+    {
+      "inputs": {
+        "leaf": 1.0,
+        "root": 0.0,
+        "soluble": 0.0,
+        "compost": 0.0
+      },
+      "output": [
+        0.46,
+        0.32,
+        0.04,
+        0.18,
+        0.0
+      ]
+    },
+    {
+      "inputs": {
+        "leaf": 0.0,
+        "root": 1.0,
+        "soluble": 0.0,
+        "compost": 0.0
+      },
+      "output": [
+        0.46,
+        0.32,
+        0.04,
+        0.18,
+        0.0
+      ]
+    },
+    {
+      "inputs": {
+        "leaf": 0.0,
+        "root": 0.0,
+        "soluble": 1.0,
+        "compost": 0.0
+      },
+      "output": [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "inputs": {
+        "leaf": 0.0,
+        "root": 0.0,
+        "soluble": 0.0,
+        "compost": 1.0
+      },
+      "output": [
+        0.69,
+        0.09,
+        0.02,
+        0.2,
+        0.0
+      ]
+    },
+    {
+      "inputs": {
+        "leaf": 0.5,
+        "root": 0.3,
+        "soluble": 0.1,
+        "compost": 0.1
+      },
+      "output": [
+        0.437,
+        0.365,
+        0.034,
+        0.164,
+        0.0
+      ]
+    }
+  ]
+}

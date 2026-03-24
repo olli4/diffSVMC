@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$description": "Tracks which code branches are exercised by fixtures and tested in JAX / TS ports. Fixture coverage is computed and enforced by scripts/verify_branch_coverage.py.",
+  "branches": [
+    {
+      "id": "phydro.ftemp_kphio.c4_select",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "c4 boolean selects C4 vs C3 polynomial",
+      "else_behavior": "C3 polynomial branch",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Separate fixture keys ftemp_kphio_c3 and ftemp_kphio_c4 exercise both sides."
+    },
+    {
+      "id": "phydro.ftemp_kphio.negative_clamp",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "ftemp_kphio < 0 -> clamp result to 0",
+      "else_behavior": "leave the computed value unchanged",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures hit the clamp on C4 tc=-10 and tc=0, and leave it unclamped elsewhere."
+    },
+    {
+      "id": "phydro.quadratic.negative_discriminant",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "root = b^2 - 4ac < 0",
+      "else_behavior": "discriminant is non-negative and root solving proceeds normally",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Near-zero negative discriminant case (a=1,b=1,c=nearest(0.25,1.0)) triggers the tolerance clamp. Existing cases cover non-negative discriminants."
+    },
+    {
+      "id": "phydro.quadratic.near_zero_discriminant",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "inside the negative-discriminant guard, -root < 3*epsilon(b)",
+      "else_behavior": "fall through to the impossible_discriminant arm",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "True side now exercised by the near-zero negative discriminant fixture. False side leads to impossible_discriminant (undefined r1).",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "undefined-behavior",
+        "approved_by": "phase-1-baseline",
+        "reason": "The false (else) side of this branch falls through to the impossible_discriminant arm which returns with r1 uninitialized.",
+        "stabilization_plan": "Only cover the else side after the upstream Fortran impossible_discriminant arm is hardened to return a defined value."
+      }
+    },
+    {
+      "id": "phydro.quadratic.impossible_discriminant",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "inside the negative-discriminant guard, the near-zero tolerance check fails and the routine returns early",
+      "else_behavior": "the near-zero tolerance branch zeroes the discriminant and continues",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "The else side of near_zero_discriminant falls into this arm. The outer negative-discriminant guard is now entered by the near-zero fixture (case 9), but that case takes the near_zero_discriminant true branch and never reaches this arm. Covering this arm would validate undefined state (r1 uninitialized).",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "undefined-behavior",
+        "approved_by": "phase-1-baseline",
+        "reason": "The early-return impossible-discriminant arm returns with r1 uninitialized, so forcing a fixture here would validate undefined state rather than a stable contract.",
+        "stabilization_plan": "Only cover this branch after upstream Fortran is hardened or the harness wraps it with explicit defined-state behavior."
+      }
+    },
+    {
+      "id": "phydro.quadratic.linear_fallback",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "a == 0 and the quadratic degenerates to a linear or constant equation",
+      "else_behavior": "use the standard quadratic formula",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include both a==0 and a!=0 cases."
+    },
+    {
+      "id": "phydro.quadratic.zero_ab",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "within the linear fallback, b == 0 and r1 is forced to 0",
+      "else_behavior": "within the linear fallback, solve r1 = -c/b",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include both a==0,b==0 and a==0,b!=0 cases."
+    },
+    {
+      "id": "phydro.fn_profit.hypothesis_select",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "opt_hypothesis == 'PM'",
+      "else_behavior": "use the 'LC' least-cost formulation",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures now include both PM baseline cases and an LC optimization case."
+    },
+    {
+      "id": "phydro.fn_profit.optim_negate",
+      "file": "vendor/SVMC/src/phydro_mod.f90",
+      "condition": "do_optim=.TRUE. and the result is negated for the minimizer",
+      "else_behavior": "return the computed profit unchanged",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include both the normal profit return and the negated optimizer-facing return."
+    },
+    {
+      "id": "water.soil_retention.porosity_floor",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "watsat - vol_ice < 0.01 and effective porosity is clamped to 0.01",
+      "else_behavior": "use the unclamped effective porosity",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include both the standard soil parameters and a low-porosity clamp trigger case."
+    },
+    {
+      "id": "water.soil_conductivity.porosity_floor",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "watsat - vol_ice < 0.01 and effective porosity is clamped to 0.01",
+      "else_behavior": "use the unclamped effective porosity",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include both the standard soil parameters and a low-porosity clamp trigger case."
+    },
+    {
+      "id": "water.aerodynamics.ground_height_cap",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "zground > 0.1*hc and ground height is capped",
+      "else_behavior": "use zground unchanged",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures now include an explicit high-zground canopy case that triggers the 10% height cap."
+    },
+    {
+      "id": "water.aerodynamics.zn_cap",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "zg1/hc > 1.0 and normalized ground height is capped at 1.0",
+      "else_behavior": "use zg1/hc unchanged",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "Given the preceding zg1=min(zground,0.1*hc), the cap cannot trigger under the current implementation.",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "dead-code",
+        "approved_by": "phase-1-baseline",
+        "reason": "This branch is effectively dead behind the earlier ground-height cap and is explicitly waived until the upstream logic changes or the branch is removed.",
+        "evidence": "The preceding assignment zg1=min(zground,0.1*hc) implies zg1/hc <= 0.1, so the later min(zg1/hc,1.0) clamp cannot take its capped side."
+      }
+    },
+    {
+      "id": "water.aerodynamics.rb_lai_guard",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "LAI > eps and boundary-layer resistance is computed",
+      "else_behavior": "force rb = 0",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include LAI=0 and positive-LAI cases."
+    },
+    {
+      "id": "water.penman_monteith.le_floor",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "raw Penman-Monteith result is negative and is floored to 0",
+      "else_behavior": "return the raw non-negative result",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures now include a negative-energy stress case that is floored to zero alongside standard positive-LE cases."
+    },
+    {
+      "id": "yasso.exponential_smooth_met.invalid_ind_guard",
+      "file": "vendor/SVMC/src/wrapper_yasso.f90",
+      "condition": "met_ind < 1 and the routine stops with a fatal error",
+      "else_behavior": "continue with initialization or smoothing",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "The invalid-index arm is intentionally unexercised because it would abort the program.",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "fatal-path",
+        "approved_by": "phase-1-baseline",
+        "reason": "The fatal-stop guard is intentionally waived until the harness has a safe error-path test strategy.",
+        "safe_test_strategy": "Exercise this path only through an isolated subprocess or error-capturing harness mode so the full fixture generator does not abort."
+      }
+    },
+    {
+      "id": "yasso.exponential_smooth_met.init_vs_smooth",
+      "file": "vendor/SVMC/src/wrapper_yasso.f90",
+      "condition": "met_ind == 1 and the rolling state is initialized from the daily input",
+      "else_behavior": "apply exponential smoothing to the existing rolling state",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include both the initialization and smoothing paths."
+    }
+  ],
+  "summary": {
+    "total_branches": 17,
+    "both_sides_covered": 13,
+    "single_side_only": 4,
+    "waived_uncovered": 4,
+    "coverage_pct": "76% (13/17)"
+  }
+}

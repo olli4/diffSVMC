@@ -1,0 +1,20 @@
+{
+  "name": "@diffsvmc/svmc-js",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Differentiable SVMC submodels ported to jax-js-nonconsuming",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hamk-uas/jax-js-nonconsuming": "github:hamk-uas/jax-js-nonconsuming"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

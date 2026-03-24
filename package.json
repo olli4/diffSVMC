@@ -1,0 +1,29 @@
+{
+  "name": "diffsvmc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "branch:audit": "python3 scripts/verify_branch_coverage.py",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@vitest/browser": "^3.2.4",
+    "eslint": "^9.27.0",
+    "playwright": "^1.52.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.57.2",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@hamk-uas/jax-js-nonconsuming"
+    ]
+  },
+  "packageManager": "pnpm@10.28.2"
+}
