@@ -1,3 +1,3 @@
 [submodule "vendor/SVMC"]
 	path = vendor/SVMC
-	url = https://github.com/huitang-earth/SVMC.git
+	url = https://github.com/olli4/SVMC.git
