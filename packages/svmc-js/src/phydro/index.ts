@@ -9,3 +9,4 @@ export { calcGs } from "./calc-gs.js";
 export { calcAssimLightLimited } from "./calc-assim-light-limited.js";
 export { fnProfit } from "./fn-profit.js";
 export { quadratic } from "./quadratic.js";
+export { optimiseMidtermMulti, pmodelHydraulicsNumerical } from "./solver.js";

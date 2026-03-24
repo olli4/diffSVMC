@@ -317,3 +317,91 @@ def test_fn_profit_ood_gradients():
     g = jax.grad(profit_fn, argnums=(0, 1))(jnp.array(5.0), jnp.array(3.0))
     assert jnp.isfinite(g[0]), "fn_profit grad wrt log_jmax should be finite at OOD"
     assert jnp.isfinite(g[1]), "fn_profit grad wrt dpsi should be finite at OOD"
+
+
+# ── pmodel_hydraulics_numerical (full solver) ──────────────────────────
+
+
+from svmc_jax.phydro.solver import pmodel_hydraulics_numerical
+
+
+@pytest.mark.parametrize("c", PHYDRO.get("pmodel_hydraulics_numerical", []),
+    ids=lambda c: (
+        f"tc={c['inputs']['tc']}_vpd={c['inputs']['vpd']}"
+        f"_psi={c['inputs']['psi_soil']}"
+    ))
+def test_pmodel_hydraulics_numerical(c):
+    """Solver output must match Fortran reference within optimizer tolerance."""
+    inp = c["inputs"]
+    result = pmodel_hydraulics_numerical(
+        tc=inp["tc"],
+        ppfd=inp["ppfd"],
+        vpd=inp["vpd"],
+        co2=inp["co2"],
+        sp=inp["sp"],
+        fapar=inp["fapar"],
+        psi_soil=inp["psi_soil"],
+        rdark_leaf=inp["rdark_leaf"],
+    )
+    ref = c["output"]
+    # Optimizer convergence tolerance: JAX uses exact autodiff gradients while
+    # Fortran uses finite-difference (h=0.001), so they converge to slightly
+    # different optima. Observed relative differences: jmax ~3-7e-4, dpsi ~1-3e-3.
+    rtol_solver = 3e-3
+    for key in ("jmax", "dpsi", "gs", "aj", "ci", "chi", "vcmax", "profit"):
+        assert jnp.allclose(result[key], ref[key], rtol=rtol_solver, atol=1e-10), \
+            f"{key}: JAX={float(result[key]):.10g} vs Fortran={ref[key]:.10g}"
+
+
+def test_pmodel_hydraulics_numerical_profit_positive():
+    """At benign conditions, optimised profit should be positive."""
+    result = pmodel_hydraulics_numerical(
+        tc=20.0, ppfd=300.0, vpd=1000.0, co2=400.0,
+        sp=101325.0, fapar=0.9, psi_soil=-0.5, rdark_leaf=0.015,
+    )
+    assert float(result["profit"]) > 0.0
+    assert float(result["jmax"]) > 0.0
+    assert float(result["gs"]) > 0.0
+
+
+def test_solver_monotonic_vpd():
+    """Higher VPD should reduce stomatal conductance (gs) — basic ecophysiology."""
+    vpds = [500.0, 1000.0, 2000.0, 3000.0]
+    gs_values = []
+    for v in vpds:
+        r = pmodel_hydraulics_numerical(
+            tc=20.0, ppfd=300.0, vpd=v, co2=400.0,
+            sp=101325.0, fapar=0.9, psi_soil=-0.5, rdark_leaf=0.015,
+        )
+        gs_values.append(float(r["gs"]))
+    for i in range(len(gs_values) - 1):
+        assert gs_values[i] > gs_values[i + 1], \
+            f"gs should decrease with VPD: gs({vpds[i]})={gs_values[i]} >= gs({vpds[i+1]})={gs_values[i+1]}"
+
+
+def test_solver_monotonic_drought():
+    """Drier soil (lower ψ_soil) should reduce stomatal conductance."""
+    psi_soils = [-0.2, -0.5, -1.0, -2.0]
+    gs_values = []
+    for ps in psi_soils:
+        r = pmodel_hydraulics_numerical(
+            tc=20.0, ppfd=300.0, vpd=1000.0, co2=400.0,
+            sp=101325.0, fapar=0.9, psi_soil=ps, rdark_leaf=0.015,
+        )
+        gs_values.append(float(r["gs"]))
+    for i in range(len(gs_values) - 1):
+        assert gs_values[i] > gs_values[i + 1], \
+            f"gs should decrease with drought: gs({psi_soils[i]})={gs_values[i]} >= gs({psi_soils[i+1]})={gs_values[i+1]}"
+
+
+def test_solver_outputs_consistent():
+    """Verify internal consistency: aj = gs0 * (ca - ci)."""
+    r = pmodel_hydraulics_numerical(
+        tc=20.0, ppfd=300.0, vpd=1000.0, co2=400.0,
+        sp=101325.0, fapar=0.9, psi_soil=-0.5, rdark_leaf=0.015,
+    )
+    gs0 = float(r["gs"]) * 1e6 / 101325.0
+    ca = 400.0 * 101325.0 * 1e-6
+    aj_recomputed = gs0 * (ca - float(r["ci"]))
+    assert jnp.allclose(jnp.float64(aj_recomputed), r["aj"], rtol=1e-8), \
+        f"aj consistency: {aj_recomputed} vs {float(r['aj'])}"

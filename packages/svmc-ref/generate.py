@@ -80,6 +80,7 @@ PHYDRO_FUNCTIONS = {
     "calc_assim_light_limited",
     "fn_profit",
     "quadratic",
+    "pmodel_hydraulics_numerical",
 }
 
 WATER_FUNCTIONS = {

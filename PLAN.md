@@ -59,9 +59,10 @@ Combine the confirmed leaf functions into their dependent wrappers.
 - `calc_assim_light_limited` (depends on `quadratic`). ✅ JAX + TS ported, fixture-tested.
 - `calc_gs` (depends on `scale_conductivity`). ✅ JAX + TS ported, fixture-tested.
 - `fn_profit` (objective function forming the core of P-Hydro optimization). ✅ JAX + TS ported, fixture-tested, OOD gradient-tested.
-- **Optimizer Overhaul (`optimise_midterm_multi`)**: _Crucial milestone_. Replace Fortran's finite-difference L-BFGS-B with JAX-native differentiable optimization (e.g., `jax.grad` through `fn_profit`). Must be explicitly fixture-tested for convergence and objective semantics before wrapping.
-  - _TS Port Note: Since `optax` lacks native bounds for L-BFGS-B, implement a projected-gradient or penalty-based box-constrained fallback and document the approximation._
-- `pmodel_hydraulics_numerical` (the overarching solver wrapper).
+- **Optimizer Overhaul (`optimise_midterm_multi`)**: ✅ JAX uses `scipy.optimize.minimize` (L-BFGS-B) with `jax.grad` for exact gradients — replacing Fortran's finite-difference approximation. TS uses a custom projected L-BFGS with finite-difference gradients (matching Fortran approach). Both fixture-tested against 6 reference cases.
+  - _JAX vs Fortran tolerance: ~0.3% relative (FD vs AD gradient difference). TS tolerance: ~5% relative (float32 + FD)._
+  - _Invariant-tested: VPD monotonicity, drought monotonicity, aj/gs/ci consistency._
+- `pmodel_hydraulics_numerical` (the overarching solver wrapper). ✅ JAX + TS ported, 6 fixture reference cases spanning environmental gradients, invariant-tested.
 
 ## Phase 3: SpaFHy Submodels (Canopy & Soil Water Balance)
 

@@ -220,3 +220,96 @@ describe("P-Hydro leaf functions — Fortran reference", () => {
     });
   }
 });
+
+// ── pmodel_hydraulics_numerical (full solver) ────────────────────────
+
+import { pmodelHydraulicsNumerical } from "../src/phydro/index.js";
+
+describe("P-Hydro solver — Fortran reference", () => {
+  // Type assertion: fixture may not have this key yet in older snapshots
+  const solverFixtures =
+    (phydroFixtures as Record<string, unknown[]>)[
+      "pmodel_hydraulics_numerical"
+    ] ?? [];
+
+  for (const c of solverFixtures as Array<{
+    inputs: Record<string, number>;
+    output: Record<string, number>;
+  }>) {
+    it(`pmodel tc=${c.inputs.tc} vpd=${c.inputs.vpd} psi=${c.inputs.psi_soil}`, async () => {
+      const result = pmodelHydraulicsNumerical(
+        c.inputs.tc,
+        c.inputs.ppfd,
+        c.inputs.vpd,
+        c.inputs.co2,
+        c.inputs.sp,
+        c.inputs.fapar,
+        c.inputs.psi_soil,
+        c.inputs.rdark_leaf,
+      );
+      // TS uses float32 + FD gradients; Fortran uses float64 + FD gradients.
+      // Tolerance reflects both optimizer convergence diff and float32 precision.
+      const rtol = 5e-2;
+      const atol = 1e-4;
+      for (const key of [
+        "jmax",
+        "dpsi",
+        "gs",
+        "aj",
+        "ci",
+        "chi",
+        "vcmax",
+        "profit",
+      ] as const) {
+        const tsKey =
+          key === "chi_jmax_lim" ? "chiJmaxLim" : key;
+        const got = (result as Record<string, np.Array>)[tsKey].item() as number;
+        const expected = c.output[key];
+        const err =
+          Math.abs(got - expected) /
+          Math.max(Math.abs(expected), atol);
+        if (err > rtol) {
+          throw new Error(
+            `${key}: TS=${got} vs Fortran=${expected} (relErr=${err.toExponential(2)})`,
+          );
+        }
+      }
+      // Dispose all returned arrays
+      result.jmax.dispose();
+      result.dpsi.dispose();
+      result.gs.dispose();
+      result.aj.dispose();
+      result.ci.dispose();
+      result.chi.dispose();
+      result.vcmax.dispose();
+      result.profit.dispose();
+      result.chiJmaxLim.dispose();
+    });
+  }
+
+  it("profit should be positive at benign conditions", async () => {
+    const result = pmodelHydraulicsNumerical(
+      20.0,
+      300.0,
+      1000.0,
+      400.0,
+      101325.0,
+      0.9,
+      -0.5,
+      0.015,
+    );
+    const profit = result.profit.item() as number;
+    expect(profit).toBeGreaterThan(0);
+    const jmax = result.jmax.item() as number;
+    expect(jmax).toBeGreaterThan(0);
+    result.jmax.dispose();
+    result.dpsi.dispose();
+    result.gs.dispose();
+    result.aj.dispose();
+    result.ci.dispose();
+    result.chi.dispose();
+    result.vcmax.dispose();
+    result.profit.dispose();
+    result.chiJmaxLim.dispose();
+  });
+});

@@ -15,12 +15,13 @@ PROGRAM harness
   use phydro_mod, only: ftemp_arrh, gammastar, ftemp_kphio, density_h2o, &
                        viscosity_h2o, calc_kmm, scale_conductivity, &
                        calc_gs, calc_assim_light_limited, fn_profit, &
-                       quadratic
+                       quadratic, pmodel_hydraulics_numerical
   use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity
   use yasso, only: inputs_to_fractions, statesize_yasso
   use readvegpara_mod, only: par_plant_type, par_cost_type, par_env_type, &
                              par_photosynth_type, optimizer_type, kphio, &
-                             opt_hypothesis
+                             opt_hypothesis, conductivity, psi50, b, alpha, &
+                             gamma
   use readsoilpara_mod, only: spafhy_para_type
   use readctrl_mod, only: time_step
 
@@ -75,6 +76,14 @@ PROGRAM harness
   type(spafhy_para_type)    :: soil_params
   type(spafhy_para_type)    :: soil_floor_params
   type(spafhy_para_type)    :: aero_cap_params
+
+  ! pmodel_hydraulics_numerical outputs
+  real(8) :: phn_jmax, phn_dpsi, phn_gs, phn_aj, phn_ci, phn_chi
+  real(8) :: phn_vcmax, phn_profit, phn_chi_jmax_lim
+  integer, parameter :: NPHN = 6
+  real(8) :: phn_tc(NPHN), phn_vpd(NPHN), phn_ppfd(NPHN)
+  real(8) :: phn_co2(NPHN), phn_psi_soil(NPHN), phn_fapar(NPHN)
+  real(8) :: phn_sp(NPHN), phn_rdark(NPHN)
 
   integer :: i, j, k, m
   integer :: nrec  ! record counter
@@ -572,6 +581,60 @@ PROGRAM harness
     '"met_rolling_in":[10.0,0.5],"met_ind_in":2},"output":{"met_rolling":[', &
     met_rolling(1), ',', met_rolling(2), '],"met_ind":', met_ind, '}}'
   nrec = nrec + 1
+
+  ! ================================================================
+  ! 19. pmodel_hydraulics_numerical (full P-Hydro solver)
+  ! ================================================================
+  ! Set module-level globals read by pmodel_hydraulics_numerical
+  conductivity = 4.0d-16
+  psi50        = -3.46d0
+  b            = 2.0d0
+  alpha        = 0.1d0
+  gamma        = 0.5d0
+  ! kphio already defaults to 0.087182 via readvegpara_mod
+  opt_hypothesis = 'PM'
+
+  ! Representative test cases spanning environmental gradients:
+  !   tc(°C)  vpd(Pa)  ppfd    co2(ppm)  psi_soil(MPa)  fapar   sp(Pa)      rdark
+  phn_tc       = (/ 10.0d0,  20.0d0,   25.0d0,   30.0d0,    15.0d0,     20.0d0  /)
+  phn_vpd      = (/ 500.0d0, 1000.0d0, 2000.0d0, 3000.0d0,  800.0d0,    1500.0d0 /)
+  phn_ppfd     = (/ 200.0d0, 300.0d0,  500.0d0,  400.0d0,   150.0d0,    350.0d0  /)
+  phn_co2      = (/ 400.0d0, 400.0d0,  400.0d0,  400.0d0,   280.0d0,    600.0d0  /)
+  phn_psi_soil = (/ -0.5d0,  -0.5d0,   -1.0d0,   -2.0d0,    -0.2d0,     -0.5d0  /)
+  phn_fapar    = (/ 0.8d0,   0.9d0,    0.7d0,    0.6d0,     0.95d0,     0.85d0   /)
+  phn_sp       = (/ 101325.0d0, 101325.0d0, 80000.0d0, 101325.0d0, 101325.0d0, 110000.0d0 /)
+  phn_rdark    = (/ 0.015d0, 0.015d0,  0.015d0,  0.015d0,   0.015d0,    0.015d0  /)
+
+  do i = 1, NPHN
+    call pmodel_hydraulics_numerical( &
+      phn_tc(i), phn_ppfd(i), phn_vpd(i), phn_co2(i), phn_sp(i), &
+      phn_fapar(i), phn_psi_soil(i), phn_rdark(i), &
+      phn_jmax, phn_dpsi, phn_gs, phn_aj, phn_ci, phn_chi, &
+      phn_vcmax, phn_profit, phn_chi_jmax_lim)
+    write(10, '(A,F10.4,A,F10.4,A,F10.4,A,F10.4,A,F12.1,A,' // &
+      'F6.4,A,F8.4,A,F8.6,A,' // &
+      'ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,' // &
+      'ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
+      '{"fn":"pmodel_hydraulics_numerical","inputs":{' // &
+      '"tc":', phn_tc(i), &
+      ',"ppfd":', phn_ppfd(i), &
+      ',"vpd":', phn_vpd(i), &
+      ',"co2":', phn_co2(i), &
+      ',"sp":', phn_sp(i), &
+      ',"fapar":', phn_fapar(i), &
+      ',"psi_soil":', phn_psi_soil(i), &
+      ',"rdark_leaf":', phn_rdark(i), &
+      '},"output":{"jmax":', phn_jmax, &
+      ',"dpsi":', phn_dpsi, &
+      ',"gs":', phn_gs, &
+      ',"aj":', phn_aj, &
+      ',"ci":', phn_ci, &
+      ',"chi":', phn_chi, &
+      ',"vcmax":', phn_vcmax, &
+      ',"profit":', phn_profit, &
+      ',"chi_jmax_lim":', phn_chi_jmax_lim, '}}'
+    nrec = nrec + 1
+  end do
 
   ! --- Close JSONL file and report summary to stdout ---
   close(10)

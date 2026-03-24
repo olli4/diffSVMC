@@ -12,6 +12,10 @@ from svmc_jax.phydro.leaf_functions import (
     calc_assim_light_limited,
     fn_profit,
 )
+from svmc_jax.phydro.solver import (
+    optimise_midterm_multi,
+    pmodel_hydraulics_numerical,
+)
 
 __all__ = [
     "ftemp_arrh",
