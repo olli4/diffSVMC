@@ -25,6 +25,7 @@ svmc-fortran/src/*.mod
 packages/svmc-ref/*.o
 packages/svmc-ref/*.mod
 packages/svmc-ref/harness
+packages/svmc-ref/fixtures.jsonl
 
 # Vitest browser-mode screenshot artifacts
 __screenshots__/

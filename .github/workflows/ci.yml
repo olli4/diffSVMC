@@ -31,7 +31,6 @@ jobs:
 
       - name: Install JAX dependencies
         run: |
-          cd packages/svmc-jax
           pip install hatch
           pip install -e .[dev]
 
@@ -42,9 +41,7 @@ jobs:
         run: python3 scripts/verify_branch_coverage.py
 
       - name: Verify Fixture Contracts (Pytest)
-        run: |
-          cd packages/svmc-jax
-          pytest tests/
+        run: pytest
 
       - name: Verify Browser Port (Vitest)
         run: pnpm test

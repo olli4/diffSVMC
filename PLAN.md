@@ -48,8 +48,8 @@ Strictly porting the lowest-level, independent functions first to isolate bugs.
 
 - **`exponential_smooth_met` Fortran harness copy**: The Fortran harness duplicates this routine (to avoid the yasso20 dependency chain). Constants α₁/α₂ are centralized in `packages/svmc-ref/constants/water.json`; the harness hardcodes matching values with a comment pointing to the canonical source.
 - **TS constant allocation**: `inputs-to-fractions.ts` converts JS arrays to `np.array()` on every call; `quadratic.ts` allocates multiple zero-scalar arrays per call. Inside `jit()` these are constant-folded (traced once, baked into compiled program). The eager path pays per-call allocation cost — acceptable for non-hot-loop usage, to be revisited when wrapping the simulation loop in `jit()`.
-- **Harness IO Brittle stdout**: `svmc-ref/harness.f90` currently dumps its JSON generation directly to `stdout`. Upstream math warnings will break the `generate.py` parser. To be fixed early in Phase 2 by having the harness explicitly `OPEN` a `.jsonl` unit.
-- **Disjointed Python venvs**: The repo currently requires two separate environments (root `.venv/` for scripts, `packages/svmc-jax/.venv/` for testing). To be unified via root `pyproject.toml` (likely with `uv` workspaces) in Phase 2 so a single install serves both harness tooling and `svmc-jax` tests.
+- ~~**Harness IO Brittle stdout**~~: ✅ Fixed — harness now writes to `fixtures.jsonl` via Fortran file unit 10; `generate.py` reads from the file instead of parsing stdout.
+- ~~**Disjointed Python venvs**~~: ✅ Fixed — `pyproject.toml` hoisted to repo root with `[tool.pytest.ini_options] testpaths`; CI uses single `pip install -e .[dev]` from root. Old `packages/svmc-jax/.venv/` is obsolete.
 
 ## Phase 2: Intermediate P-Hydro Assemblies & Optimizer
 

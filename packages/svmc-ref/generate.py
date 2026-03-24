@@ -2,8 +2,8 @@
 """
 Generate reference fixture files from the Fortran SVMC harness.
 
-Builds the Fortran harness, runs it, parses the JSONL output, and
-writes structured JSON fixture files for phydro and water tests.
+Builds the Fortran harness, runs it, reads the JSONL file it produces,
+and writes structured JSON fixture files for phydro, water, and yasso tests.
 """
 
 import json
@@ -33,7 +33,7 @@ def build_harness() -> None:
 
 
 def run_harness() -> list[dict]:
-    """Execute the harness and parse its JSONL output."""
+    """Execute the harness and parse its JSONL file output."""
     print("Running harness …")
     result = subprocess.run(
         [str(HERE / "harness")],
@@ -44,9 +44,16 @@ def run_harness() -> list[dict]:
     if result.returncode != 0:
         print("=== STDERR ===", result.stderr, sep="\n")
         sys.exit(1)
+    if result.stdout.strip():
+        print(result.stdout.strip())
+
+    jsonl_path = HERE / "fixtures.jsonl"
+    if not jsonl_path.exists():
+        print(f"ERROR: harness did not produce {jsonl_path}")
+        sys.exit(1)
 
     records: list[dict] = []
-    for i, line in enumerate(result.stdout.strip().splitlines(), 1):
+    for i, line in enumerate(jsonl_path.read_text().strip().splitlines(), 1):
         line = line.strip()
         if not line:
             continue
@@ -56,7 +63,7 @@ def run_harness() -> list[dict]:
             print(f"Bad JSON on line {i}: {exc}\n  {line!r}")
             sys.exit(1)
 
-    print(f"Parsed {len(records)} records")
+    print(f"Parsed {len(records)} records from {jsonl_path.name}")
     return records
 
 

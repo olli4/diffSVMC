@@ -2,7 +2,11 @@ PROGRAM harness
   !-----------------------------------------------------------------
   ! Test harness for SVMC leaf-level functions.
   ! Calls each function over a grid of inputs and writes JSONL
-  ! (one JSON object per line) to stdout.
+  ! (one JSON object per line) to fixtures.jsonl via unit 10.
+  !
+  ! stdout is reserved for the human-readable record count summary.
+  ! This prevents Fortran runtime warnings from contaminating the
+  ! machine-readable JSONL stream.
   !
   ! Private functions from water_mod (e_sat, penman_monteith) are
   ! duplicated here since they cannot be accessed via USE.
@@ -73,6 +77,11 @@ PROGRAM harness
   type(spafhy_para_type)    :: aero_cap_params
 
   integer :: i, j, k, m
+  integer :: nrec  ! record counter
+
+  ! --- Open JSONL output file on unit 10 ---
+  open(unit=10, file='fixtures.jsonl', status='replace', action='write')
+  nrec = 0
 
   ! --- Initialise grids ---
   tc_grid   = (/ -10.0d0, 0.0d0, 5.0d0, 10.0d0, 15.0d0, &
@@ -140,9 +149,10 @@ PROGRAM harness
     do k = 1, NDHA
       dha = dha_grid(k)
       result_d = ftemp_arrh(tk, dha)
-      write(*, '(A,F10.4,A,F10.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F10.1,A,ES22.15,A)') &
         '{"fn":"ftemp_arrh","inputs":{"tk":', tk, ',"dha":', dha, &
         '},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -154,9 +164,10 @@ PROGRAM harness
     do j = 1, NP
       patm = patm_grid(j)
       result_d = gammastar(tc, patm)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"gammastar","inputs":{"tc":', tc, ',"patm":', patm, &
         '},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -166,13 +177,15 @@ PROGRAM harness
   do i = 1, NTC
     tc = tc_grid(i)
     result_d = ftemp_kphio(tc, .FALSE.)
-    write(*, '(A,F10.4,A,ES22.15,A)') &
+    write(10, '(A,F10.4,A,ES22.15,A)') &
       '{"fn":"ftemp_kphio_c3","inputs":{"tc":', tc, &
       '},"output":', result_d, '}'
+    nrec = nrec + 1
     result_d = ftemp_kphio(tc, .TRUE.)
-    write(*, '(A,F10.4,A,ES22.15,A)') &
+    write(10, '(A,F10.4,A,ES22.15,A)') &
       '{"fn":"ftemp_kphio_c4","inputs":{"tc":', tc, &
       '},"output":', result_d, '}'
+    nrec = nrec + 1
   end do
 
   ! ================================================================
@@ -183,9 +196,10 @@ PROGRAM harness
     do j = 1, NP
       patm = patm_grid(j)
       result_d = density_h2o(tc, patm)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"density_h2o","inputs":{"tc":', tc, ',"patm":', patm, &
         '},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -197,9 +211,10 @@ PROGRAM harness
     do j = 1, NP
       patm = patm_grid(j)
       result_d = viscosity_h2o(tc, patm)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"viscosity_h2o","inputs":{"tc":', tc, ',"patm":', patm, &
         '},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -211,9 +226,10 @@ PROGRAM harness
     do j = 1, NP
       patm = patm_grid(j)
       call calc_kmm(tc, patm, kmm_out)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"calc_kmm","inputs":{"tc":', tc, ',"patm":', patm, &
         '},"output":', kmm_out, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -225,9 +241,10 @@ PROGRAM harness
     do j = 1, NP
       patm = patm_grid(j)
       call harness_e_sat(tc, patm, s_out, g_out, esat_out)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
         '{"fn":"e_sat","inputs":{"tc":', tc, ',"patm":', patm, &
         '},"output":{"esat":', esat_out, ',"s":', s_out, ',"g":', g_out, '}}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -241,18 +258,20 @@ PROGRAM harness
       do m = 1, NVPD
         vpd_val = vpd_grid(m)
         le_out = harness_penman_monteith(200.0d0, vpd_val, tc, 0.01d0, 0.05d0, patm)
-        write(*, '(A,F10.4,A,F12.1,A,F10.1,A,ES22.15,A)') &
+        write(10, '(A,F10.4,A,F12.1,A,F10.1,A,ES22.15,A)') &
           '{"fn":"penman_monteith","inputs":{"AE":200.0,"tc":', tc, &
           ',"patm":', patm, ',"vpd":', vpd_val, &
           ',"Gs":0.01,"Ga":0.05},"output":', le_out, '}'
+        nrec = nrec + 1
       end do
     end do
   end do
 
   le_out = harness_penman_monteith(-50.0d0, 0.0d0, 20.0d0, 0.01d0, 0.05d0, 101325.0d0)
-  write(*, '(A,ES22.15,A)') &
+  write(10, '(A,ES22.15,A)') &
     '{"fn":"penman_monteith","inputs":{"AE":-50.0,"tc":20.0,' // &
     '"patm":101325.0,"vpd":0.0,"Gs":0.01,"Ga":0.05},"output":', le_out, '}'
+  nrec = nrec + 1
 
   ! ================================================================
   ! 9. soil_water_retention_curve(vol_liq, spafhy_para, smp)
@@ -260,15 +279,17 @@ PROGRAM harness
   do k = 1, NTHETA
     theta = theta_grid(k)
     call soil_water_retention_curve(theta, soil_params, smp_out)
-    write(*, '(A,F8.4,A,ES22.15,A)') &
+    write(10, '(A,F8.4,A,ES22.15,A)') &
       '{"fn":"soil_water_retention_curve","inputs":{"vol_liq":', theta, &
       ',"n_van":1.12,"alpha_van":4.45,"watsat":0.75,"watres":0.0},"output":', smp_out, '}'
+    nrec = nrec + 1
   end do
 
   call soil_water_retention_curve(0.004d0, soil_floor_params, smp_out)
-  write(*, '(A,ES22.15,A)') &
+  write(10, '(A,ES22.15,A)') &
     '{"fn":"soil_water_retention_curve","inputs":{"vol_liq":0.004,' // &
     '"n_van":1.12,"alpha_van":4.45,"watsat":0.005,"watres":0.0},"output":', smp_out, '}'
+  nrec = nrec + 1
 
   ! ================================================================
   ! 10. soil_hydraulic_conductivity(vol_liq, spafhy_para, khydr)
@@ -276,15 +297,17 @@ PROGRAM harness
   do k = 1, NTHETA
     theta = theta_grid(k)
     call soil_hydraulic_conductivity(theta, soil_params, khydr_out)
-    write(*, '(A,F8.4,A,ES22.15,A)') &
+    write(10, '(A,F8.4,A,ES22.15,A)') &
       '{"fn":"soil_hydraulic_conductivity","inputs":{"vol_liq":', theta, &
       ',"n_van":1.12,"alpha_van":4.45,"watsat":0.75,"watres":0.0,"ksat":1.0e-5},"output":', khydr_out, '}'
+    nrec = nrec + 1
   end do
 
   call soil_hydraulic_conductivity(0.004d0, soil_floor_params, khydr_out)
-  write(*, '(A,ES22.15,A)') &
+  write(10, '(A,ES22.15,A)') &
     '{"fn":"soil_hydraulic_conductivity","inputs":{"vol_liq":0.004,' // &
     '"n_van":1.12,"alpha_van":4.45,"watsat":0.005,"watres":0.0,"ksat":1.0e-5},"output":', khydr_out, '}'
+  nrec = nrec + 1
 
   ! ================================================================
   ! 11. scale_conductivity(K, par_env)
@@ -299,9 +322,10 @@ PROGRAM harness
       par_env%tc              = tc
       par_env%vpd             = 1000.0d0
       result_d = scale_conductivity(4.0d-16, par_env)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"scale_conductivity","inputs":{"K":4.0e-16,"tc":', tc, &
         ',"patm":', patm, '},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -322,10 +346,11 @@ PROGRAM harness
       par_env%tc              = tc
       par_env%vpd             = 1000.0d0
       result_d = calc_gs(1.0d0, -0.5d0, par_plant, par_env)
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"calc_gs","inputs":{"dpsi":1.0,"psi_soil":-0.5,"tc":', tc, &
         ',"patm":', patm, &
         ',"vpd":1000.0,"conductivity":4.0e-16,"psi50":-3.46,"b":2.0},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -353,11 +378,12 @@ PROGRAM harness
       result_d = calc_gs(1.0d0, -0.5d0, par_plant, par_env)
       call calc_assim_light_limited(ci_out, aj_out, result_d, 100.0d0, par_photosynth)
 
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A,ES22.15,A)') &
         '{"fn":"calc_assim_light_limited","inputs":{"tc":', tc, &
         ',"patm":', patm, &
         ',"gs_from_calc_gs":true,"jmax":100.0,"Iabs":300.0,"ca_ppm":400.0,' // &
         '"delta":0.015},"output":{"ci":', ci_out, ',"aj":', aj_out, '}}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -391,13 +417,14 @@ PROGRAM harness
       result_d = fn_profit(lj_dps, -0.5d0, par_cost, par_photosynth, &
                            par_plant, par_env, .FALSE.)
 
-      write(*, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
+      write(10, '(A,F10.4,A,F12.1,A,ES22.15,A)') &
         '{"fn":"fn_profit","inputs":{"logjmax":3.0,"dpsi":1.0,' // &
         '"psi_soil":-0.5,"alpha":0.1,"gamma":0.5,"tc":', tc, &
         ',"patm":', patm, &
         ',"vpd":1000.0,"Iabs":300.0,"ca_ppm":400.0,"delta":0.015,' // &
         '"conductivity":4.0e-16,"psi50":-3.46,"b":2.0,' // &
         '"hypothesis":"PM","do_optim":false},"output":', result_d, '}'
+      nrec = nrec + 1
     end do
   end do
 
@@ -423,12 +450,13 @@ PROGRAM harness
   result_d = fn_profit(lj_dps, -0.5d0, par_cost, par_photosynth, &
                        par_plant, par_env, .TRUE.)
 
-  write(*, '(A,ES22.15,A)') &
+  write(10, '(A,ES22.15,A)') &
     '{"fn":"fn_profit","inputs":{"logjmax":3.0,"dpsi":1.0,' // &
     '"psi_soil":-0.5,"alpha":0.1,"gamma":0.5,"tc":20.0,' // &
     '"patm":101325.0,"vpd":1000.0,"Iabs":300.0,"ca_ppm":400.0,' // &
     '"delta":0.015,"conductivity":4.0e-16,"psi50":-3.46,"b":2.0,' // &
     '"hypothesis":"LC","do_optim":true},"output":', result_d, '}'
+  nrec = nrec + 1
   opt_hypothesis = 'PM'
 
   ! ================================================================
@@ -436,9 +464,10 @@ PROGRAM harness
   ! ================================================================
   do i = 1, NQUAD
     call quadratic(quad_a(i), quad_b(i), quad_c(i), quad_r1)
-    write(*, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
       '{"fn":"quadratic","inputs":{"a":', quad_a(i), ',"b":', quad_b(i), &
       ',"c":', quad_c(i), '},"output":', quad_r1, '}'
+    nrec = nrec + 1
   end do
 
   ! ================================================================
@@ -446,29 +475,34 @@ PROGRAM harness
   ! ================================================================
   ! 5 test cases with different litter composition
   call inputs_to_fractions(1.0d0, 0.0d0, 0.0d0, 0.0d0, fract_out)
-  write(*, '(A,5(ES22.15,A))') &
+  write(10, '(A,5(ES22.15,A))') &
     '{"fn":"inputs_to_fractions","inputs":{"leaf":1.0,"root":0.0,"soluble":0.0,"compost":0.0},"output":[', &
     fract_out(1), ',', fract_out(2), ',', fract_out(3), ',', fract_out(4), ',', fract_out(5), ']}'
+  nrec = nrec + 1
 
   call inputs_to_fractions(0.0d0, 1.0d0, 0.0d0, 0.0d0, fract_out)
-  write(*, '(A,5(ES22.15,A))') &
+  write(10, '(A,5(ES22.15,A))') &
     '{"fn":"inputs_to_fractions","inputs":{"leaf":0.0,"root":1.0,"soluble":0.0,"compost":0.0},"output":[', &
     fract_out(1), ',', fract_out(2), ',', fract_out(3), ',', fract_out(4), ',', fract_out(5), ']}'
+  nrec = nrec + 1
 
   call inputs_to_fractions(0.0d0, 0.0d0, 1.0d0, 0.0d0, fract_out)
-  write(*, '(A,5(ES22.15,A))') &
+  write(10, '(A,5(ES22.15,A))') &
     '{"fn":"inputs_to_fractions","inputs":{"leaf":0.0,"root":0.0,"soluble":1.0,"compost":0.0},"output":[', &
     fract_out(1), ',', fract_out(2), ',', fract_out(3), ',', fract_out(4), ',', fract_out(5), ']}'
+  nrec = nrec + 1
 
   call inputs_to_fractions(0.0d0, 0.0d0, 0.0d0, 1.0d0, fract_out)
-  write(*, '(A,5(ES22.15,A))') &
+  write(10, '(A,5(ES22.15,A))') &
     '{"fn":"inputs_to_fractions","inputs":{"leaf":0.0,"root":0.0,"soluble":0.0,"compost":1.0},"output":[', &
     fract_out(1), ',', fract_out(2), ',', fract_out(3), ',', fract_out(4), ',', fract_out(5), ']}'
+  nrec = nrec + 1
 
   call inputs_to_fractions(0.5d0, 0.3d0, 0.1d0, 0.1d0, fract_out)
-  write(*, '(A,5(ES22.15,A))') &
+  write(10, '(A,5(ES22.15,A))') &
     '{"fn":"inputs_to_fractions","inputs":{"leaf":0.5,"root":0.3,"soluble":0.1,"compost":0.1},"output":[', &
     fract_out(1), ',', fract_out(2), ',', fract_out(3), ',', fract_out(4), ',', fract_out(5), ']}'
+  nrec = nrec + 1
 
   ! ================================================================
   ! 17. aerodynamics(LAI, Uo, spafhy_para) — PRIVATE, duplicated here
@@ -478,7 +512,7 @@ PROGRAM harness
       do j = 1, NUO_AERO
         call harness_aerodynamics(lai_aero_grid(i), uo_aero_grid(j), &
           aero_ra, aero_rb, aero_ras, aero_ustar, aero_Uh, aero_Ug, aero_para(m))
-        write(*, '(A,F6.1,A,F6.1,A,F6.1,A,F6.1,A,F6.2,A,F6.2,A,F6.3,A,' // &
+        write(10, '(A,F6.1,A,F6.1,A,F6.1,A,F6.1,A,F6.2,A,F6.2,A,F6.3,A,' // &
           'ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
           '{"fn":"aerodynamics","inputs":{"LAI":', lai_aero_grid(i), &
           ',"Uo":', uo_aero_grid(j), &
@@ -493,16 +527,18 @@ PROGRAM harness
           ',"ustar":', aero_ustar, &
           ',"Uh":', aero_Uh, &
           ',"Ug":', aero_Ug, '}}'
+        nrec = nrec + 1
       end do
     end do
   end do
 
   call harness_aerodynamics(2.0d0, 2.0d0, aero_ra, aero_rb, aero_ras, aero_ustar, aero_Uh, aero_Ug, aero_cap_params)
-  write(*, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
+  write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
     '{"fn":"aerodynamics","inputs":{"LAI":2.0,"Uo":2.0,"hc":10.0,' // &
     '"zmeas":2.0,"zground":2.0,"zo_ground":0.02,"w_leaf":0.02},"output":{"ra":', aero_ra, &
     ',"rb":', aero_rb, ',"ras":', aero_ras, ',"ustar":', aero_ustar, &
     ',"Uh":', aero_Uh, ',"Ug":', aero_Ug, '}}'
+  nrec = nrec + 1
 
   ! ================================================================
   ! 18. exponential_smooth_met — 3 steps showing initialization + smoothing
@@ -513,26 +549,33 @@ PROGRAM harness
 
   ! Step 1: initialization (met_ind == 1) → rolling = daily
   call exponential_smooth_met(met_daily, met_rolling, met_ind)
-  write(*, '(A,ES22.15,A,ES22.15,A,I1,A)') &
+  write(10, '(A,ES22.15,A,ES22.15,A,I1,A)') &
     '{"fn":"exponential_smooth_met","inputs":{"met_daily":[10.0,0.5],' // &
     '"met_rolling_in":[0.0,0.0],"met_ind_in":1},"output":{"met_rolling":[', &
     met_rolling(1), ',', met_rolling(2), '],"met_ind":', met_ind, '}}'
+  nrec = nrec + 1
 
   ! Step 2: exponential smoothing with same daily
   call exponential_smooth_met(met_daily, met_rolling, met_ind)
-  write(*, '(A,ES22.15,A,ES22.15,A,I1,A)') &
+  write(10, '(A,ES22.15,A,ES22.15,A,I1,A)') &
     '{"fn":"exponential_smooth_met","inputs":{"met_daily":[10.0,0.5],' // &
     '"met_rolling_in":[10.0,0.5],"met_ind_in":2},"output":{"met_rolling":[', &
     met_rolling(1), ',', met_rolling(2), '],"met_ind":', met_ind, '}}'
+  nrec = nrec + 1
 
   ! Step 3: exponential smoothing with different daily
   met_daily(1) = 15.0d0
   met_daily(2) = 0.8d0
   call exponential_smooth_met(met_daily, met_rolling, met_ind)
-  write(*, '(A,ES22.15,A,ES22.15,A,I1,A)') &
+  write(10, '(A,ES22.15,A,ES22.15,A,I1,A)') &
     '{"fn":"exponential_smooth_met","inputs":{"met_daily":[15.0,0.8],' // &
     '"met_rolling_in":[10.0,0.5],"met_ind_in":2},"output":{"met_rolling":[', &
     met_rolling(1), ',', met_rolling(2), '],"met_ind":', met_ind, '}}'
+  nrec = nrec + 1
+
+  ! --- Close JSONL file and report summary to stdout ---
+  close(10)
+  write(*, '(A,I0,A)') 'Emitted ', nrec, ' records to fixtures.jsonl'
 
 CONTAINS
 
