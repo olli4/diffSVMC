@@ -9,9 +9,11 @@ Port of optimise_midterm_multi and pmodel_hydraulics_numerical from
 phydro_mod.f90 in the Fortran SVMC model.
 """
 
+from typing import NamedTuple
+
 import jax
 import jax.numpy as jnp
-from scipy.optimize import minimize
+import optax
 
 from svmc_jax.phydro.leaf_functions import (
     ParCost,
@@ -31,8 +33,56 @@ from svmc_jax.phydro.leaf_functions import (
 
 # Fortran defaults from readvegpara_mod
 KPHIO = 0.087182
+MAX_OPT_STEPS = 512
+OPT_LEARNING_RATE = 0.05
+OPT_CLIP_NORM = 10.0
 
 
+class OptimParams(NamedTuple):
+    """Optimized parameter pair for the P-Hydro profit objective."""
+
+    log_jmax: jax.Array
+    dpsi: jax.Array
+
+
+class OptimCarry(NamedTuple):
+    """Loop state for the projected Optax solver."""
+
+    params: OptimParams
+    opt_state: optax.OptState
+    best_params: OptimParams
+    best_loss: jax.Array
+
+
+OPTIMIZER = optax.chain(
+    optax.clip_by_global_norm(OPT_CLIP_NORM),
+    optax.adam(OPT_LEARNING_RATE),
+)
+
+
+def _project_params(params: OptimParams) -> OptimParams:
+    """Project optimizer parameters back into the Fortran box bounds."""
+
+    return OptimParams(
+        log_jmax=jnp.clip(params.log_jmax, -10.0, 10.0),
+        dpsi=jnp.clip(params.dpsi, 1e-4, 1e6),
+    )
+
+
+def _select_params(
+    predicate: jax.Array,
+    when_true: OptimParams,
+    when_false: OptimParams,
+) -> OptimParams:
+    """Select one of two parameter states without leaving traced JAX code."""
+
+    return OptimParams(
+        log_jmax=jnp.where(predicate, when_true.log_jmax, when_false.log_jmax),
+        dpsi=jnp.where(predicate, when_true.dpsi, when_false.dpsi),
+    )
+
+
+@jax.jit
 def optimise_midterm_multi(
     psi_soil: jax.Array,
     par_cost: ParCost,
@@ -42,41 +92,52 @@ def optimise_midterm_multi(
 ) -> tuple[jax.Array, jax.Array]:
     """Find optimal (log_jmax, dpsi) that maximise the profit function.
 
-    Uses L-BFGS-B with exact JAX gradients instead of Fortran's
-    finite-difference approximation.
+    Uses a projected Optax Adam loop, keeping the entire optimization in
+    traced JAX code so it remains safe to JIT and compose inside larger
+    simulation and calibration loops.
 
     Returns:
         (log_jmax_opt, dpsi_opt) — the optimised parameters
     """
-    # Objective: minimise negative profit (= maximise profit)
-    def objective(x):
-        log_jmax, dpsi = x[0], x[1]
-        return float(fn_profit(
-            jnp.float64(log_jmax), jnp.float64(dpsi),
+    def objective(params: OptimParams) -> jax.Array:
+        return fn_profit(
+            params.log_jmax,
+            params.dpsi,
             psi_soil, par_cost, par_photosynth, par_plant, par_env,
             do_optim=True,
-        ))
-
-    grad_fn = jax.grad(
-        lambda x: fn_profit(x[0], x[1], psi_soil, par_cost, par_photosynth,
-                            par_plant, par_env, do_optim=True),
     )
 
-    def gradient(x):
-        g = grad_fn(jnp.array(x, dtype=jnp.float64))
-        return [float(g[0]), float(g[1])]
-
-    # Match Fortran: x0 = [4.0, 1.0], bounds = [(-10, 10), (0.0001, 1e6)]
-    result = minimize(
-        objective,
-        x0=[4.0, 1.0],
-        jac=gradient,
-        method="L-BFGS-B",
-        bounds=[(-10.0, 10.0), (1e-4, 1e6)],
-        options={"ftol": 1e7 * 2.220446049250313e-16, "gtol": 1e-5, "maxiter": 1000},
+    objective_and_grad = jax.value_and_grad(objective)
+    init_params = OptimParams(
+        log_jmax=jnp.float64(4.0),
+        dpsi=jnp.float64(1.0),
+    )
+    init_carry = OptimCarry(
+        params=init_params,
+        opt_state=OPTIMIZER.init(init_params),
+        best_params=init_params,
+        best_loss=jnp.float64(jnp.inf),
     )
 
-    return jnp.float64(result.x[0]), jnp.float64(result.x[1])
+    def step(_, carry: OptimCarry) -> OptimCarry:
+        loss, grads = objective_and_grad(carry.params)
+        better = loss < carry.best_loss
+        best_params = _select_params(better, carry.params, carry.best_params)
+        best_loss = jnp.where(better, loss, carry.best_loss)
+        updates, opt_state = OPTIMIZER.update(grads, carry.opt_state, carry.params)
+        params = _project_params(optax.apply_updates(carry.params, updates))
+        return OptimCarry(
+            params=params,
+            opt_state=opt_state,
+            best_params=best_params,
+            best_loss=best_loss,
+        )
+
+    final_carry = jax.lax.fori_loop(0, MAX_OPT_STEPS, step, init_carry)
+    final_loss = objective(final_carry.params)
+    better = final_loss < final_carry.best_loss
+    best_params = _select_params(better, final_carry.params, final_carry.best_params)
+    return best_params.log_jmax, best_params.dpsi
 
 
 def pmodel_hydraulics_numerical(

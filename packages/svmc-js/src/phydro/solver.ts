@@ -1,4 +1,11 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { clearCaches, jit, lax, numpy as np, tree, valueAndGrad } from "@hamk-uas/jax-js-nonconsuming";
+import {
+  adam,
+  applyUpdates,
+  chain,
+  clipByGlobalNorm,
+  type OptState,
+} from "@hamk-uas/jax-js-nonconsuming/optax";
 import { fnProfit } from "./fn-profit.js";
 import { calcGs } from "./calc-gs.js";
 import { calcAssimLightLimited } from "./calc-assim-light-limited.js";
@@ -18,200 +25,241 @@ import type {
  * Fortran default quantum yield efficiency from readvegpara_mod.
  */
 const KPHIO = 0.087182;
+const MAX_OPT_STEPS = 512;
+const OPT_LEARNING_RATE = 0.05;
+const OPT_CLIP_NORM = 10.0;
+const OPTIMIZER = chain(
+  clipByGlobalNorm(OPT_CLIP_NORM),
+  adam(OPT_LEARNING_RATE),
+);
 
-/**
- * Project a value into [lo, hi].
- */
-function clamp(x: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, x));
+type OptimResult = {
+  jmax: np.Array;
+  dpsi: np.Array;
+  objectiveLoss: np.Array;
+};
+
+type OptimCarry = {
+  params: np.Array;
+  optState: OptState;
+  bestParams: np.Array;
+  bestLoss: np.Array;
+};
+
+function packParams(logJmax: np.Array, dpsi: np.Array): np.Array {
+  return np.stack([logJmax, dpsi]);
 }
 
 /**
- * Evaluate the negated profit function at [logJmax, dpsi] (for minimisation).
- * Caller must dispose the returned np.Array.
+ * Project optimizer parameters back into the Fortran box bounds.
  */
-function evalObjective(
-  logJmax: number,
-  dpsi: number,
+function projectParams(params: np.Array): np.Array {
+  using logJmax = lax.dynamicIndexInDim(params, 0, 0, false);
+  using dpsi = lax.dynamicIndexInDim(params, 1, 0, false);
+  using clippedLogJmax = np.clip(logJmax, -10.0, 10.0);
+  using clippedDpsi = np.clip(dpsi, 1e-4, 1e6);
+  return packParams(clippedLogJmax, clippedDpsi);
+}
+
+/**
+ * Projected Optax solver for the 2D profit minimization objective.
+ *
+ * Uses traced autodiff via `valueAndGrad` and runs entirely in jax-js array
+ * code so it remains safe to compose into larger `jit()`-compiled loops.
+ */
+function optimiseMidtermMultiImpl(
   psiSoil: np.Array,
-  parCost: ParCost,
-  parPhotosynth: ParPhotosynth,
-  parPlant: ParPlant,
-  parEnv: ParEnv,
-): number {
-  using lj = np.array(logJmax);
-  using dp = np.array(dpsi);
-  using result = fnProfit(
-    lj,
-    dp,
+  alpha: np.Array,
+  gamma: np.Array,
+  kmm: np.Array,
+  gammastar: np.Array,
+  phi0: np.Array,
+  Iabs: np.Array,
+  ca: np.Array,
+  photosynthPatm: np.Array,
+  delta: np.Array,
+  conductivity: np.Array,
+  psi50: np.Array,
+  b: np.Array,
+  viscosityWater: np.Array,
+  densityWater: np.Array,
+  envPatm: np.Array,
+  tc: np.Array,
+  vpd: np.Array,
+): OptimResult {
+  const parCost: ParCost = { alpha, gamma };
+  const parPhotosynth: ParPhotosynth = {
+    kmm,
+    gammastar,
+    phi0,
+    Iabs,
+    ca,
+    patm: photosynthPatm,
+    delta,
+  };
+  const parPlant: ParPlant = { conductivity, psi50, b };
+  const parEnv: ParEnv = {
+    viscosityWater,
+    densityWater,
+    patm: envPatm,
+    tc,
+    vpd,
+  };
+
+  const objective = (
+    params: np.Array,
+    psiSoilArg: np.Array,
+    parCostArg: ParCost,
+    parPhotosynthArg: ParPhotosynth,
+    parPlantArg: ParPlant,
+    parEnvArg: ParEnv,
+  ) => {
+    using logJmax = lax.dynamicIndexInDim(params, 0, 0, false);
+    using dpsi = lax.dynamicIndexInDim(params, 1, 0, false);
+    return fnProfit(
+      logJmax,
+      dpsi,
+      psiSoilArg,
+      parCostArg,
+      parPhotosynthArg,
+      parPlantArg,
+      parEnvArg,
+      "PM",
+      true,
+    );
+  };
+  using initParams = np.array([4.0, 1.0]);
+  const initCarry = {
+    params: initParams,
+    optState: OPTIMIZER.init(initParams),
+    bestParams: np.array([4.0, 1.0]),
+    bestLoss: np.array(Infinity),
+  };
+
+  const step = (carry: OptimCarry, _: null): [OptimCarry, null] => {
+    void _;
+    const [loss, grads] = valueAndGrad(objective, { argnums: 0 })(
+      carry.params,
+      psiSoil,
+      parCost,
+      parPhotosynth,
+      parPlant,
+      parEnv,
+    );
+    const better = loss.less(carry.bestLoss);
+    const bestParams = np.where(better, carry.params, carry.bestParams);
+    const bestLoss = np.where(better, loss, carry.bestLoss);
+    const [updates, optState] = OPTIMIZER.update(grads, carry.optState, carry.params);
+    const params = projectParams(applyUpdates(carry.params, updates));
+    return [{ params, optState, bestParams, bestLoss }, null];
+  };
+
+  const [finalCarry] = lax.scan(step, initCarry, null, { length: MAX_OPT_STEPS });
+
+  using finalLoss = objective(
+    finalCarry.params,
     psiSoil,
     parCost,
     parPhotosynth,
     parPlant,
     parEnv,
-    "PM",
-    true, // doOptim = negate for minimisation
   );
-  return result.item() as number;
-}
-
-/**
- * Finite-difference gradient of the objective, matching Fortran h=0.001.
- */
-function fdGradient(
-  x: [number, number],
-  psiSoil: np.Array,
-  parCost: ParCost,
-  parPhotosynth: ParPhotosynth,
-  parPlant: ParPlant,
-  parEnv: ParEnv,
-): { f: number; g: [number, number] } {
-  const h = 0.001;
-  const f0 = evalObjective(x[0], x[1], psiSoil, parCost, parPhotosynth, parPlant, parEnv);
-  const f1 = evalObjective(x[0] + h, x[1], psiSoil, parCost, parPhotosynth, parPlant, parEnv);
-  const f2 = evalObjective(x[0], x[1] + h, psiSoil, parCost, parPhotosynth, parPlant, parEnv);
+  using better = finalLoss.less(finalCarry.bestLoss);
+  using bestParams = np.where(better, finalCarry.params, finalCarry.bestParams);
+  using bestLoss = np.where(better, finalLoss, finalCarry.bestLoss);
+  using logJmax = lax.dynamicIndexInDim(bestParams, 0, 0, false);
+  using dpsiRaw = lax.dynamicIndexInDim(bestParams, 1, 0, false);
+  using jmaxRaw = np.exp(logJmax);
+  const jmax = jmaxRaw.add(0);
+  const dpsi = dpsiRaw.add(0);
+  const objectiveLoss = bestLoss.add(0);
+  tree.dispose(finalCarry);
   return {
-    f: f0,
-    g: [(f1 - f0) / h, (f2 - f0) / h],
+    jmax,
+    dpsi,
+    objectiveLoss,
   };
 }
 
-/** Bounds for the 2D L-BFGS-B problem. */
-const BOUNDS: [[number, number], [number, number]] = [
-  [-10, 10],
-  [1e-4, 1e6],
-];
+function optimiseMidtermMultiFlat(
+  psiSoil: np.Array,
+  alpha: np.Array,
+  gamma: np.Array,
+  kmm: np.Array,
+  gammastar: np.Array,
+  phi0: np.Array,
+  Iabs: np.Array,
+  ca: np.Array,
+  photosynthPatm: np.Array,
+  delta: np.Array,
+  conductivity: np.Array,
+  psi50: np.Array,
+  b: np.Array,
+  viscosityWater: np.Array,
+  densityWater: np.Array,
+  envPatm: np.Array,
+  tc: np.Array,
+  vpd: np.Array,
+): OptimResult {
+  using core = jit(optimiseMidtermMultiImpl);
+  const result = core(
+    psiSoil,
+    alpha,
+    gamma,
+    kmm,
+    gammastar,
+    phi0,
+    Iabs,
+    ca,
+    photosynthPatm,
+    delta,
+    conductivity,
+    psi50,
+    b,
+    viscosityWater,
+    densityWater,
+    envPatm,
+    tc,
+    vpd,
+  );
+  clearCaches();
+  return result;
+}
 
-/**
- * Projected L-BFGS optimisation for 2D box-constrained minimisation.
- *
- * Replaces Fortran's L-BFGS-B (setulb) with finite-difference gradients.
- * Matches Fortran settings: factr=1e7, pgtol=1e-5, maxIter=1000.
- */
 export function optimiseMidtermMulti(
   psiSoil: np.Array,
   parCost: ParCost,
   parPhotosynth: ParPhotosynth,
   parPlant: ParPlant,
   parEnv: ParEnv,
-): { logJmax: number; dpsi: number } {
-  // Initial guess matching Fortran
-  let x: [number, number] = [4.0, 1.0];
-
-  // L-BFGS memory
-  const m = 5;
-  const sHistory: [number, number][] = [];
-  const yHistory: [number, number][] = [];
-  const rhoHistory: number[] = [];
-
-  const maxIter = 1000;
-  const ftol = 1e7 * 2.220446049250313e-16; // factr * machine_eps
-  const gtol = 1e-5;
-
-  let { f: fPrev, g: gPrev } = fdGradient(x, psiSoil, parCost, parPhotosynth, parPlant, parEnv);
-
-  for (let iter = 0; iter < maxIter; iter++) {
-    // Check gradient convergence
-    const gInf = Math.max(Math.abs(gPrev[0]), Math.abs(gPrev[1]));
-    if (gInf < gtol) break;
-
-    // L-BFGS two-loop recursion to compute search direction
-    const q: [number, number] = [gPrev[0], gPrev[1]];
-    const alphas: number[] = [];
-    for (let i = sHistory.length - 1; i >= 0; i--) {
-      const ai =
-        rhoHistory[i] * (sHistory[i][0] * q[0] + sHistory[i][1] * q[1]);
-      alphas.unshift(ai);
-      q[0] -= ai * yHistory[i][0];
-      q[1] -= ai * yHistory[i][1];
-    }
-
-    // Initial Hessian approximation (scalar)
-    let H0 = 1.0;
-    if (sHistory.length > 0) {
-      const lastIdx = sHistory.length - 1;
-      const sy =
-        sHistory[lastIdx][0] * yHistory[lastIdx][0] +
-        sHistory[lastIdx][1] * yHistory[lastIdx][1];
-      const yy =
-        yHistory[lastIdx][0] * yHistory[lastIdx][0] +
-        yHistory[lastIdx][1] * yHistory[lastIdx][1];
-      if (yy > 0) H0 = sy / yy;
-    }
-
-    const r: [number, number] = [H0 * q[0], H0 * q[1]];
-    for (let i = 0; i < sHistory.length; i++) {
-      const bi =
-        rhoHistory[i] * (yHistory[i][0] * r[0] + yHistory[i][1] * r[1]);
-      r[0] += sHistory[i][0] * (alphas[i] - bi);
-      r[1] += sHistory[i][1] * (alphas[i] - bi);
-    }
-
-    // Search direction (negative of L-BFGS direction)
-    const d: [number, number] = [-r[0], -r[1]];
-
-    // Backtracking line search with projection
-    let alpha = 1.0;
-    const c1 = 1e-4;
-    const dirDeriv = gPrev[0] * d[0] + gPrev[1] * d[1];
-    if (dirDeriv >= 0) {
-      // Not a descent direction — use steepest descent
-      d[0] = -gPrev[0];
-      d[1] = -gPrev[1];
-    }
-
-    let xNew: [number, number] = [0, 0];
-    let fNew = fPrev;
-    let found = false;
-    for (let ls = 0; ls < 20; ls++) {
-      xNew = [
-        clamp(x[0] + alpha * d[0], BOUNDS[0][0], BOUNDS[0][1]),
-        clamp(x[1] + alpha * d[1], BOUNDS[1][0], BOUNDS[1][1]),
-      ];
-      fNew = evalObjective(xNew[0], xNew[1], psiSoil, parCost, parPhotosynth, parPlant, parEnv);
-      const step = gPrev[0] * (xNew[0] - x[0]) + gPrev[1] * (xNew[1] - x[1]);
-      if (fNew <= fPrev + c1 * step) {
-        found = true;
-        break;
-      }
-      alpha *= 0.5;
-    }
-    if (!found) break;
-
-    // Function value convergence
-    if (Math.abs(fNew - fPrev) <= ftol * Math.max(1.0, Math.abs(fPrev))) break;
-
-    const { g: gNew } = fdGradient(xNew, psiSoil, parCost, parPhotosynth, parPlant, parEnv);
-
-    // Update L-BFGS history
-    const s: [number, number] = [xNew[0] - x[0], xNew[1] - x[1]];
-    const y: [number, number] = [gNew[0] - gPrev[0], gNew[1] - gPrev[1]];
-    const sy = s[0] * y[0] + s[1] * y[1];
-    if (sy > 1e-20) {
-      sHistory.push(s);
-      yHistory.push(y);
-      rhoHistory.push(1.0 / sy);
-      if (sHistory.length > m) {
-        sHistory.shift();
-        yHistory.shift();
-        rhoHistory.shift();
-      }
-    }
-
-    x = xNew;
-    fPrev = fNew;
-    gPrev[0] = gNew[0];
-    gPrev[1] = gNew[1];
-  }
-
-  return { logJmax: x[0], dpsi: x[1] };
+): OptimResult {
+  return optimiseMidtermMultiFlat(
+    psiSoil,
+    parCost.alpha,
+    parCost.gamma,
+    parPhotosynth.kmm,
+    parPhotosynth.gammastar,
+    parPhotosynth.phi0,
+    parPhotosynth.Iabs,
+    parPhotosynth.ca,
+    parPhotosynth.patm,
+    parPhotosynth.delta,
+    parPlant.conductivity,
+    parPlant.psi50,
+    parPlant.b,
+    parEnv.viscosityWater,
+    parEnv.densityWater,
+    parEnv.patm,
+    parEnv.tc,
+    parEnv.vpd,
+  );
 }
 
 /**
  * Full P-Hydro solver: compute optimal photosynthesis-hydraulics state.
  *
  * Port of `pmodel_hydraulics_numerical` from phydro_mod.f90.
- * Uses projected L-BFGS with finite-difference gradients (matching Fortran).
+ * Uses projected Optax Adam updates inside traced jax-js code.
  *
  * All returned np.Array values must be disposed by the caller.
  */
@@ -241,16 +289,89 @@ export function pmodelHydraulicsNumerical(
   profit: np.Array;
   chiJmaxLim: np.Array;
 } {
-  // Build parameter structs
-  const parPlant: ParPlant = {
+  using psiSoilNp = np.array(psiSoilVal);
+
+  // Optimise
+  const opt = (() => {
+    const parPlantOpt: ParPlant = {
+      conductivity: np.array(conductivityVal),
+      psi50: np.array(psi50Val),
+      b: np.array(bParam),
+    };
+    const parCostOpt: ParCost = {
+      alpha: np.array(alphaVal),
+      gamma: np.array(gammaCost),
+    };
+
+    using optTcArr = np.array(tc);
+    using optSpArr = np.array(sp);
+    const optKmm = calcKmm(optTcArr, optSpArr);
+    const optGsStar = computeGammastar(optTcArr, optSpArr);
+    using optKphioVal = np.array(kphio);
+    using optFtk = ftempKphio(optTcArr, false);
+    const optPhi0 = optKphioVal.mul(optFtk);
+    using optPpfdArr = np.array(ppfd);
+    using optFaparArr = np.array(fapar);
+    const optIabs = optPpfdArr.mul(optFaparArr);
+    using optCo2Arr = np.array(co2);
+    using optSpTmp = np.array(sp * 1e-6);
+    const optCa = optCo2Arr.mul(optSpTmp);
+    const optPatm = np.array(sp);
+    const optDelta = np.array(rdarkLeaf);
+
+    const optViscWater = viscosityH2o(optTcArr, optSpArr);
+    const optDensWater = densityH2o(optTcArr, optSpArr);
+    const optEnvPatm = np.array(sp);
+    const optEnvTc = np.array(tc);
+    const optEnvVpd = np.array(vpd);
+
+    const result = optimiseMidtermMultiFlat(
+      psiSoilNp,
+      parCostOpt.alpha,
+      parCostOpt.gamma,
+      optKmm,
+      optGsStar,
+      optPhi0,
+      optIabs,
+      optCa,
+      optPatm,
+      optDelta,
+      parPlantOpt.conductivity,
+      parPlantOpt.psi50,
+      parPlantOpt.b,
+      optViscWater,
+      optDensWater,
+      optEnvPatm,
+      optEnvTc,
+      optEnvVpd,
+    );
+
+    parPlantOpt.conductivity.dispose();
+    parPlantOpt.psi50.dispose();
+    parPlantOpt.b.dispose();
+    parCostOpt.alpha.dispose();
+    parCostOpt.gamma.dispose();
+    optKmm.dispose();
+    optGsStar.dispose();
+    optPhi0.dispose();
+    optIabs.dispose();
+    optCa.dispose();
+    optPatm.dispose();
+    optDelta.dispose();
+    optViscWater.dispose();
+    optDensWater.dispose();
+    optEnvPatm.dispose();
+    optEnvTc.dispose();
+    optEnvVpd.dispose();
+
+    return result;
+  })();
+
+  using parPlant = tree.makeDisposable({
     conductivity: np.array(conductivityVal),
     psi50: np.array(psi50Val),
     b: np.array(bParam),
-  };
-  const parCost: ParCost = {
-    alpha: np.array(alphaVal),
-    gamma: np.array(gammaCost),
-  };
+  }) as ParPlant;
 
   using tcArr = np.array(tc);
   using spArr = np.array(sp);
@@ -265,53 +386,40 @@ export function pmodelHydraulicsNumerical(
   using co2Arr = np.array(co2);
   using _spTmp = np.array(sp * 1e-6);
   const ca = co2Arr.mul(_spTmp);
+  const parPhotosynthPatm = np.array(sp);
+  const parPhotosynthDelta = np.array(rdarkLeaf);
 
-  const parPhotosynth: ParPhotosynth = {
+  const viscWater = viscosityH2o(tcArr, spArr);
+  const densWater = densityH2o(tcArr, spArr);
+  const parEnvPatm = np.array(sp);
+  const parEnvTc = np.array(tc);
+  const parEnvVpd = np.array(vpd);
+
+  using parPhotosynth = tree.makeDisposable({
     kmm,
     gammastar: gs_star,
     phi0,
     Iabs,
     ca,
-    patm: np.array(sp),
-    delta: np.array(rdarkLeaf),
-  };
-
-  const viscWater = viscosityH2o(tcArr, spArr);
-  const densWater = densityH2o(tcArr, spArr);
-
-  const parEnv: ParEnv = {
+    patm: parPhotosynthPatm,
+    delta: parPhotosynthDelta,
+  }) as ParPhotosynth;
+  using parEnv = tree.makeDisposable({
     viscosityWater: viscWater,
     densityWater: densWater,
-    patm: np.array(sp),
-    tc: np.array(tc),
-    vpd: np.array(vpd),
-  };
+    patm: parEnvPatm,
+    tc: parEnvTc,
+    vpd: parEnvVpd,
+  }) as ParEnv;
 
-  using psiSoilNp = np.array(psiSoilVal);
-
-  // Optimise
-  const opt = optimiseMidtermMulti(psiSoilNp, parCost, parPhotosynth, parPlant, parEnv);
-
-  // Evaluate at optimum
-  using logJmaxOpt = np.array(opt.logJmax);
-  using dpsiOpt = np.array(opt.dpsi);
-  const profit = fnProfit(
-    logJmaxOpt,
-    dpsiOpt,
-    psiSoilNp,
-    parCost,
-    parPhotosynth,
-    parPlant,
-    parEnv,
-    "PM",
-    false,
-  );
-
-  const jmax = np.exp(logJmaxOpt);
-  const dpsiOut = np.array(opt.dpsi);
+  // Evaluate diagnostics at optimum
+  using profitRaw = opt.objectiveLoss.neg();
+  const profit = np.array(profitRaw.item() as number);
+  const jmax = opt.jmax.add(0);
+  const dpsiOut = opt.dpsi.add(0);
+  tree.dispose(opt);
   using gsVal = calcGs(dpsiOut, psiSoilNp, parPlant, parEnv);
   const gs = np.array(gsVal.item() as number); // clone to decouple lifetime
-  gsVal; // disposed by using
 
   const { ci: ciRaw, aj: ajRaw } = calcAssimLightLimited(gs, jmax, parPhotosynth);
   const ci = np.array(ciRaw.item() as number);
@@ -331,25 +439,6 @@ export function pmodelHydraulicsNumerical(
 
   const chi = ci.div(parPhotosynth.ca);
   const chiJmaxLim = np.array(0);
-
-  // Dispose parameter struct arrays
-  parPlant.conductivity.dispose();
-  parPlant.psi50.dispose();
-  parPlant.b.dispose();
-  parCost.alpha.dispose();
-  parCost.gamma.dispose();
-  parPhotosynth.kmm.dispose();
-  parPhotosynth.gammastar.dispose();
-  parPhotosynth.phi0.dispose();
-  parPhotosynth.Iabs.dispose();
-  parPhotosynth.ca.dispose();
-  parPhotosynth.patm.dispose();
-  parPhotosynth.delta.dispose();
-  parEnv.viscosityWater.dispose();
-  parEnv.densityWater.dispose();
-  parEnv.patm.dispose();
-  parEnv.tc.dispose();
-  parEnv.vpd.dispose();
 
   return { jmax, dpsi: dpsiOut, gs, aj, ci, chi, vcmax, profit, chiJmaxLim };
 }

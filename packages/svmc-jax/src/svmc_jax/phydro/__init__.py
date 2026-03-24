@@ -28,4 +28,6 @@ __all__ = [
     "calc_gs",
     "calc_assim_light_limited",
     "fn_profit",
+    "optimise_midterm_multi",
+    "pmodel_hydraulics_numerical",
 ]
