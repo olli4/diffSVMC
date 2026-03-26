@@ -85,8 +85,27 @@ Combine the confirmed leaf functions into their dependent wrappers.
 
 Move to canopy/soil hydrology processes which manage the local water states.
 
-- Intermediate modules: `canopy_water_snow` and `ground_evaporation` (both depend on `penman_monteith`).
-- Core Wrappers: `canopy_water_flux` and `soil_water`.
+- Intermediate modules: `canopy_water_snow` and `ground_evaporation` (both depend on `penman_monteith`). ✅ JAX + TS ported, fixture-tested.
+- Core Wrappers: `canopy_water_flux` and `soil_water`. ✅ JAX + TS ported, fixture-tested.
+
+### Phase 3 DoD Status
+
+| Criterion                             | Status                                                                                                                                                                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fortran reference covered             | ✅ 23 fixture cases across ground_evaporation (6), canopy_water_snow (6), canopy_water_flux (6), soil_water (5). Branch-triggering fixtures cover warm/cold precipitation, sublimation vs evaporation, snow melt/freeze, LAI=0 guard, saturation. |
+| Fixture & state contract              | ✅ JSON fixtures shared across svmc-ref, svmc-jax, svmc-js (water.json, 214 total records).                                                                                                                                                     |
+| Invariant validation                  | ✅ 7 invariant/metamorphic tests in JAX: CWS mass balance, soil water mass balance, ground evap non-negative, ground evap zero-with-snow, CWS differentiable, soil water differentiable, canopy precip monotonicity.                              |
+| Numerically faithful & differentiable | ✅ All `jnp.where` branch-free for AD; soil_hydraulic_conductivity uses `jnp.where(not_saturated, k_formula(safe=0.5), ksat)` for gradient-safe saturation handling.                                                                             |
+| Gradients & OOD validated             | ✅ canopy_water_snow_differentiable and soil_water_differentiable tests verify finite, non-zero gradients through the full functions.                                                                                                             |
+| Browser port verified & memory safe   | ✅ 23/23 vitest pass with checkLeaks (zero leaked slots). All operation chains broken into explicit `using` intermediates; `np.logicalAnd` replaced with `.mul()` (nonconsuming). mbe atol=1e-6 for float32.                                      |
+| Phase-exit gate                       | ✅ pytest (556) + vitest (526) all green.                                                                                                                                                                                                        |
+
+### Phase 3 Known Shortcuts
+
+- **Fortran mbe accounting artifact**: The Fortran `soil_water` mass-balance formula uses `rr = potinf + PondSto_old`, double-counting `PondSto_old` in the flux term. JAX and TS replicate this formula exactly; tests compare against fixture expected mbe rather than asserting mbe ≈ 0.
+- **Lateral flow hardcoded to 0**: The Fortran reference hardcodes lateral drainage to zero. Both JAX and TS replicate this; the parameter is reserved for future use.
+- **ET and Transpiration set to 0 in `canopy_water_flux`**: These will be populated by P-Hydro in Phase 5 integration.
+- **TS float32 mbe tolerance**: Mass-balance error assertions use atol=1e-6 to accommodate ~1e-8 float32 accumulation noise in the ~80-operation canopy_water_snow function.
 
 ## Phase 4: Carbon Allocation & Yasso20 Decomposition
 
