@@ -134,9 +134,15 @@ def soil_hydraulic_conductivity(
     eff_porosity = jnp.maximum(0.01, params.watsat)
     satfrac = jnp.clip(
         (vol_liq - params.watres) / (eff_porosity - params.watres),
-        1e-6, 1.0 - 1e-6,
+        1e-6, 1.0,
     )
-    k = params.ksat * jnp.sqrt(satfrac) * (1.0 - (1.0 - satfrac ** (1.0 / m)) ** m) ** 2
+    # At saturation the VG formula gives ksat analytically, but the
+    # gradient has a singularity (0^(m-1) with m<1).  Use a safe value
+    # for the formula branch so jnp.where produces finite gradients.
+    not_saturated = satfrac < 1.0
+    satfrac_safe = jnp.where(not_saturated, satfrac, 0.5)
+    k_formula = params.ksat * jnp.sqrt(satfrac_safe) * (1.0 - (1.0 - satfrac_safe ** (1.0 / m)) ** m) ** 2
+    k = jnp.where(not_saturated, k_formula, params.ksat)
     return k
 
 

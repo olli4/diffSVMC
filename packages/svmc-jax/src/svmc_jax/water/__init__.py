@@ -1,4 +1,4 @@
-"""Water module (SpaFHy) leaf functions."""
+"""Water module (SpaFHy) leaf and composition functions."""
 
 from .leaf_functions import (
     e_sat,
@@ -10,6 +10,19 @@ from .leaf_functions import (
     AeroParams,
 )
 
+from .canopy_soil import (
+    ground_evaporation,
+    canopy_water_snow,
+    canopy_water_flux,
+    soil_water,
+    CanopyWaterState,
+    CanopySnowParams,
+    CanopySnowFlux,
+    CanopyWaterFlux,
+    SoilWaterState,
+    SoilWaterFlux,
+)
+
 __all__ = [
     "e_sat",
     "penman_monteith",
@@ -18,4 +31,14 @@ __all__ = [
     "aerodynamics",
     "SoilHydroParams",
     "AeroParams",
+    "ground_evaporation",
+    "canopy_water_snow",
+    "canopy_water_flux",
+    "soil_water",
+    "CanopyWaterState",
+    "CanopySnowParams",
+    "CanopySnowFlux",
+    "CanopyWaterFlux",
+    "SoilWaterState",
+    "SoilWaterFlux",
 ]
