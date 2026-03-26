@@ -16,13 +16,16 @@ PROGRAM harness
                        viscosity_h2o, calc_kmm, scale_conductivity, &
                        calc_gs, calc_assim_light_limited, fn_profit, &
                        quadratic, pmodel_hydraulics_numerical
-  use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity
+  use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity, &
+                       canopy_water_flux, soil_water
   use yasso, only: inputs_to_fractions, statesize_yasso
   use readvegpara_mod, only: par_plant_type, par_cost_type, par_env_type, &
                              par_photosynth_type, optimizer_type, kphio, &
                              opt_hypothesis, conductivity, psi50, b, alpha, &
                              gamma
-  use readsoilpara_mod, only: spafhy_para_type
+  use readsoilpara_mod, only: spafhy_para_type, canopywater_state_type, &
+                              canopywater_flux_type, soilwater_state_type, &
+                              soilwater_flux_type
   use readctrl_mod, only: time_step
 
   implicit none
@@ -76,6 +79,32 @@ PROGRAM harness
   type(spafhy_para_type)    :: soil_params
   type(spafhy_para_type)    :: soil_floor_params
   type(spafhy_para_type)    :: aero_cap_params
+
+  ! Phase 3 canopy/soil state and flux variables
+  type(canopywater_state_type)  :: cw_state
+  type(canopywater_flux_type)   :: cw_flux
+  type(soilwater_state_type)    :: sw_state
+  type(soilwater_flux_type)     :: sw_flux
+  type(spafhy_para_type)        :: cwf_para  ! canopy water flux parameters
+
+  ! Phase 3 test-case dimensions
+  integer, parameter :: NCWF = 6   ! canopy_water_flux test cases
+  real(8) :: cwf_Rn(NCWF), cwf_Ta(NCWF), cwf_Prec(NCWF)
+  real(8) :: cwf_VPD(NCWF), cwf_U(NCWF), cwf_P(NCWF)
+  real(8) :: cwf_fapar(NCWF), cwf_LAI(NCWF)
+  ! Initial canopy state for each case
+  real(8) :: cwf_CanSto0(NCWF), cwf_SWE0(NCWF)
+  real(8) :: cwf_swe_i0(NCWF), cwf_swe_l0(NCWF)
+  ! Initial soil state for each case
+  real(8) :: cwf_WatSto0(NCWF), cwf_beta0(NCWF)
+
+  ! soil_water test-case dimensions
+  integer, parameter :: NSW = 5    ! soil_water test cases
+  real(8) :: sw_potinf(NSW), sw_tr(NSW), sw_evap(NSW), sw_latflow(NSW)
+  real(8) :: sw_WatSto0(NSW), sw_PondSto0(NSW)
+  real(8) :: sw_Wliq0(NSW), sw_Kh0(NSW), sw_FcSto0(NSW)
+  real(8) :: sw_MaxWatSto0(NSW), sw_MaxPondSto0(NSW)
+  real(8) :: sw_tr_out, sw_evap_out, sw_latflow_out
 
   ! pmodel_hydraulics_numerical outputs
   real(8) :: phn_jmax, phn_dpsi, phn_gs, phn_aj, phn_ci, phn_chi
@@ -148,6 +177,66 @@ PROGRAM harness
   aero_cap_params%zground = 2.0d0
   aero_cap_params%zo_ground = 0.02d0
   aero_cap_params%w_leaf = 0.02d0
+
+  ! --- Phase 3: SpaFHy parameters for canopy/soil water tests ---
+  ! Use conifer parameter set as base
+  cwf_para = aero_para(1)
+  cwf_para%wmax        = 0.5d0     ! canopy liquid water storage capacity per LAI, mm
+  cwf_para%wmaxsnow    = 4.0d0     ! canopy snow storage capacity per LAI, mm
+  cwf_para%gsoil       = 0.01d0    ! soil surface conductance, m/s
+  cwf_para%kmelt       = 2.31d-8   ! snowmelt rate, mm / (s K)
+  cwf_para%kfreeze     = 5.79d-9   ! freeze rate, mm / (s K)
+  cwf_para%frac_snowliq = 0.05d0   ! max fraction of liquid water in snow
+  cwf_para%rw          = 0.0d0
+  cwf_para%rwmin       = 0.0d0
+  cwf_para%cf          = 0.6d0
+  ! Soil params from existing soil_params
+  cwf_para%n_van       = soil_params%n_van
+  cwf_para%alpha_van   = soil_params%alpha_van
+  cwf_para%watsat      = soil_params%watsat
+  cwf_para%watres      = soil_params%watres
+  cwf_para%ksat        = soil_params%ksat
+  cwf_para%soil_depth  = soil_params%soil_depth
+  cwf_para%max_poros   = soil_params%max_poros
+  cwf_para%maxpond     = 10.0d0    ! max pond storage, mm
+
+  ! canopy_water_flux test cases (6 scenarios):
+  !   1: warm rain, dry canopy         2: cold snow, existing canopy storage
+  !   3: no precip, wet canopy (evap)  4: freezing, existing snowpack
+  !   5: mild, LAI=0 (bare ground)     6: high precip, saturated canopy
+  !       Rn(W/m2)  Ta(C)    Prec(mm/s) VPD(Pa) U(m/s) P(Pa)     fapar  LAI
+  cwf_Rn    = (/ 200.0d0,  50.0d0,  150.0d0,  10.0d0,   200.0d0, 300.0d0  /)
+  cwf_Ta    = (/  15.0d0,  -5.0d0,   20.0d0,  -2.0d0,    10.0d0,  18.0d0  /)
+  cwf_Prec  = (/   1.4d-4,  2.8d-4,   0.0d0,   0.0d0,    5.6d-4,  8.3d-4  /)
+  cwf_VPD   = (/ 800.0d0, 200.0d0, 1200.0d0, 300.0d0,   600.0d0, 500.0d0  /)
+  cwf_U     = (/   2.0d0,   3.0d0,    1.5d0,   4.0d0,     2.5d0,   2.0d0  /)
+  cwf_P     = (/ 101325.0d0, 101325.0d0, 101325.0d0, 80000.0d0, 101325.0d0, 101325.0d0 /)
+  cwf_fapar = (/   0.8d0,   0.7d0,    0.9d0,   0.6d0,     0.0d0,   0.85d0  /)
+  cwf_LAI   = (/   3.0d0,   2.0d0,    4.0d0,   1.5d0,     0.0d0,   5.0d0  /)
+  ! Initial canopy state
+  cwf_CanSto0 = (/  0.0d0,  0.5d0,   1.2d0,   0.0d0,     0.0d0,   2.0d0  /)
+  cwf_SWE0    = (/  0.0d0,  5.0d0,   0.0d0,  10.0d0,     0.0d0,   0.0d0  /)
+  cwf_swe_i0  = (/  0.0d0,  4.5d0,   0.0d0,   9.0d0,     0.0d0,   0.0d0  /)
+  cwf_swe_l0  = (/  0.0d0,  0.5d0,   0.0d0,   1.0d0,     0.0d0,   0.0d0  /)
+  ! Initial soil state
+  cwf_WatSto0 = (/ 100.0d0, 80.0d0, 150.0d0, 200.0d0,   120.0d0, 100.0d0  /)
+  cwf_beta0   = (/   0.8d0,  0.6d0,   1.0d0,   0.9d0,     0.7d0,   0.8d0  /)
+
+  ! soil_water test cases (5 scenarios):
+  !   1: normal infiltration   2: excess water → ponding
+  !   3: dry soil, low precip  4: saturated, heavy rain → runoff
+  !   5: transpiration-dominated
+  sw_potinf     = (/  5.0d0,  20.0d0,   1.0d0,  50.0d0,   2.0d0  /)
+  sw_tr         = (/  0.5d0,   0.2d0,   0.1d0,   0.0d0,   3.0d0  /)
+  sw_evap       = (/  0.3d0,   0.1d0,   0.05d0,  0.0d0,   0.5d0  /)
+  sw_latflow    = (/  0.0d0,   0.0d0,   0.0d0,   0.0d0,   0.0d0  /)
+  sw_WatSto0    = (/ 300.0d0, 700.0d0,  50.0d0, 750.0d0, 400.0d0  /)
+  sw_PondSto0   = (/   0.0d0,   5.0d0,   0.0d0,   0.0d0,   0.0d0  /)
+  sw_Wliq0      = (/   0.3d0,  0.65d0,   0.05d0,  0.75d0,  0.4d0  /)
+  sw_Kh0        = (/ 1.0d-6,  5.0d-6,   1.0d-8,  1.0d-5,  2.0d-6  /)
+  sw_FcSto0     = (/ 200.0d0, 200.0d0, 200.0d0, 200.0d0, 200.0d0  /)
+  sw_MaxWatSto0 = (/ 750.0d0, 750.0d0, 750.0d0, 750.0d0, 750.0d0  /)
+  sw_MaxPondSto0= (/  10.0d0,  10.0d0,  10.0d0,  10.0d0,  10.0d0  /)
 
   ! ================================================================
   ! 1. ftemp_arrh(tk, dha)
@@ -636,6 +725,229 @@ PROGRAM harness
     nrec = nrec + 1
   end do
 
+  ! ================================================================
+  ! 20. canopy_water_snow (canopy interception + snowpack dynamics)
+  ! ================================================================
+  do i = 1, NCWF
+    ! Reset canopy state from test case arrays
+    cw_state%CanopyStorage = cwf_CanSto0(i)
+    cw_state%SWE           = cwf_SWE0(i)
+    cw_state%swe_i         = cwf_swe_i0(i)
+    cw_state%swe_l         = cwf_swe_l0(i)
+    ! Zero flux struct
+    cw_flux%Throughfall     = 0.0d0
+    cw_flux%Interception    = 0.0d0
+    cw_flux%CanopyEvap      = 0.0d0
+    cw_flux%Unloading       = 0.0d0
+    cw_flux%SoilEvap        = 0.0d0
+    cw_flux%ET              = 0.0d0
+    cw_flux%Transpiration   = 0.0d0
+    cw_flux%PotInfiltration = 0.0d0
+    cw_flux%Melt            = 0.0d0
+    cw_flux%Freeze          = 0.0d0
+    cw_flux%mbe             = 0.0d0
+    ! Compute Ra via aerodynamics
+    call harness_aerodynamics(cwf_LAI(i), cwf_U(i), aero_ra, aero_rb, &
+                              aero_ras, aero_ustar, aero_Uh, aero_Ug, cwf_para)
+    ! Call canopy_water_snow (private -> harness duplicate)
+    call harness_canopy_water_snow(cw_state, cw_flux, cwf_para, &
+      cwf_Ta(i), cwf_Prec(i), cwf_Rn(i)*cwf_fapar(i), cwf_VPD(i), &
+      aero_ra, cwf_U(i), cwf_LAI(i), cwf_P(i))
+    ! Emit JSONL
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '{"fn":"canopy_water_snow","inputs":{"T":', cwf_Ta(i), &
+      ',"Pre":', cwf_Prec(i), ',"AE":', cwf_Rn(i)*cwf_fapar(i), &
+      ',"D":', cwf_VPD(i), ',"Ra":', aero_ra, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"U":', cwf_U(i), ',"LAI":', cwf_LAI(i), ',"P":', cwf_P(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"CanopyStorage_in":', cwf_CanSto0(i), ',"SWE_in":', cwf_SWE0(i), &
+      ',"swe_i_in":', cwf_swe_i0(i), ',"swe_l_in":', cwf_swe_l0(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"wmax":', cwf_para%wmax, ',"wmaxsnow":', cwf_para%wmaxsnow, &
+      ',"kmelt":', cwf_para%kmelt, ',"kfreeze":', cwf_para%kfreeze, &
+      ',"frac_snowliq":', cwf_para%frac_snowliq, ',"time_step":', time_step, '},'
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"output":{"CanopyStorage":', cw_state%CanopyStorage, &
+      ',"SWE":', cw_state%SWE, ',"swe_i":', cw_state%swe_i, &
+      ',"swe_l":', cw_state%swe_l, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"Throughfall":', cw_flux%Throughfall, ',"Interception":', cw_flux%Interception, &
+      ',"CanopyEvap":', cw_flux%CanopyEvap, ',"Unloading":', cw_flux%Unloading, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)') &
+      '"PotInfiltration":', cw_flux%PotInfiltration, ',"Melt":', cw_flux%Melt, &
+      ',"Freeze":', cw_flux%Freeze, ',"mbe":', cw_flux%mbe, '}}'
+    nrec = nrec + 1
+  end do
+
+  ! ================================================================
+  ! 21. ground_evaporation (soil surface evaporation)
+  ! ================================================================
+  do i = 1, NCWF
+    ! Reset canopy state (for SWE check)
+    cw_state%CanopyStorage = cwf_CanSto0(i)
+    cw_state%SWE           = cwf_SWE0(i)
+    cw_state%swe_i         = cwf_swe_i0(i)
+    cw_state%swe_l         = cwf_swe_l0(i)
+    ! Zero flux
+    cw_flux%SoilEvap = 0.0d0
+    ! Set soil state
+    sw_state%WatSto = cwf_WatSto0(i)
+    sw_state%beta   = cwf_beta0(i)
+    ! Compute Ras via aerodynamics
+    call harness_aerodynamics(cwf_LAI(i), cwf_U(i), aero_ra, aero_rb, &
+                              aero_ras, aero_ustar, aero_Uh, aero_Ug, cwf_para)
+    ! Call ground_evaporation (private -> harness duplicate)
+    call harness_ground_evaporation(cw_state, cw_flux, sw_state, cwf_para, &
+      cwf_Ta(i), cwf_Rn(i)*(1.0d0-cwf_fapar(i)), cwf_VPD(i), aero_ras, cwf_P(i))
+    ! Emit JSONL
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '{"fn":"ground_evaporation","inputs":{"T":', cwf_Ta(i), &
+      ',"AE":', cwf_Rn(i)*(1.0d0-cwf_fapar(i)), ',"VPD":', cwf_VPD(i), &
+      ',"Ras":', aero_ras, ',"P":', cwf_P(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"SWE":', cwf_SWE0(i), ',"beta":', cwf_beta0(i), &
+      ',"WatSto":', cwf_WatSto0(i), ',"gsoil":', cwf_para%gsoil, ','
+    write(10, '(A,ES22.15,A,ES22.15,A)') &
+      '"time_step":', time_step, '},"output":{"SoilEvap":', cw_flux%SoilEvap, '}}'
+    nrec = nrec + 1
+  end do
+
+  ! ================================================================
+  ! 22. canopy_water_flux (orchestrator: aerodynamics + canopy_water_snow + ground_evaporation)
+  ! ================================================================
+  do i = 1, NCWF
+    ! Reset canopy state from test case arrays
+    cw_state%CanopyStorage = cwf_CanSto0(i)
+    cw_state%SWE           = cwf_SWE0(i)
+    cw_state%swe_i         = cwf_swe_i0(i)
+    cw_state%swe_l         = cwf_swe_l0(i)
+    ! Zero flux struct
+    cw_flux%Throughfall     = 0.0d0
+    cw_flux%Interception    = 0.0d0
+    cw_flux%CanopyEvap      = 0.0d0
+    cw_flux%Unloading       = 0.0d0
+    cw_flux%SoilEvap        = 0.0d0
+    cw_flux%ET              = 0.0d0
+    cw_flux%Transpiration   = 0.0d0
+    cw_flux%PotInfiltration = 0.0d0
+    cw_flux%Melt            = 0.0d0
+    cw_flux%Freeze          = 0.0d0
+    cw_flux%mbe             = 0.0d0
+    ! Set soil state for ground evaporation
+    sw_state%WatSto = cwf_WatSto0(i)
+    sw_state%beta   = cwf_beta0(i)
+    ! Call public canopy_water_flux
+    call canopy_water_flux(cwf_Rn(i), cwf_Ta(i), cwf_Prec(i), cwf_VPD(i), &
+      cwf_U(i), cwf_P(i), cwf_fapar(i), cwf_LAI(i), &
+      cw_state, cw_flux, sw_state, cwf_para)
+    ! Emit JSONL - meteorological inputs
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '{"fn":"canopy_water_flux","inputs":{"Rn":', cwf_Rn(i), &
+      ',"Ta":', cwf_Ta(i), ',"Prec":', cwf_Prec(i), ',"VPD":', cwf_VPD(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"U":', cwf_U(i), ',"P":', cwf_P(i), &
+      ',"fapar":', cwf_fapar(i), ',"LAI":', cwf_LAI(i), ','
+    ! Input state
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"CanopyStorage_in":', cwf_CanSto0(i), ',"SWE_in":', cwf_SWE0(i), &
+      ',"swe_i_in":', cwf_swe_i0(i), ',"swe_l_in":', cwf_swe_l0(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"WatSto_in":', cwf_WatSto0(i), ',"beta_in":', cwf_beta0(i), ','
+    ! Parameters
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"hc":', cwf_para%hc, ',"zmeas":', cwf_para%zmeas, &
+      ',"zground":', cwf_para%zground, ',"zo_ground":', cwf_para%zo_ground, &
+      ',"w_leaf":', cwf_para%w_leaf, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"wmax":', cwf_para%wmax, ',"wmaxsnow":', cwf_para%wmaxsnow, &
+      ',"gsoil":', cwf_para%gsoil, ',"kmelt":', cwf_para%kmelt, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"kfreeze":', cwf_para%kfreeze, ',"frac_snowliq":', cwf_para%frac_snowliq, &
+      ',"time_step":', time_step, '},'
+    ! Output state
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"output":{"CanopyStorage":', cw_state%CanopyStorage, &
+      ',"SWE":', cw_state%SWE, ',"swe_i":', cw_state%swe_i, &
+      ',"swe_l":', cw_state%swe_l, ','
+    ! Output flux
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"Throughfall":', cw_flux%Throughfall, ',"Interception":', cw_flux%Interception, &
+      ',"CanopyEvap":', cw_flux%CanopyEvap, ',"Unloading":', cw_flux%Unloading, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"SoilEvap":', cw_flux%SoilEvap, ',"ET":', cw_flux%ET, &
+      ',"Transpiration":', cw_flux%Transpiration, ',"PotInfiltration":', cw_flux%PotInfiltration, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)') &
+      '"Melt":', cw_flux%Melt, ',"Freeze":', cw_flux%Freeze, &
+      ',"mbe":', cw_flux%mbe, '}}'
+    nrec = nrec + 1
+  end do
+
+  ! ================================================================
+  ! 23. soil_water (1-layer soil water balance)
+  ! ================================================================
+  do i = 1, NSW
+    ! Reset soil state from test case arrays
+    sw_state%WatSto     = sw_WatSto0(i)
+    sw_state%PondSto    = sw_PondSto0(i)
+    sw_state%MaxWatSto  = sw_MaxWatSto0(i)
+    sw_state%MaxPondSto = sw_MaxPondSto0(i)
+    sw_state%FcSto      = sw_FcSto0(i)
+    sw_state%Wliq       = sw_Wliq0(i)
+    sw_state%Kh         = sw_Kh0(i)
+    sw_state%Psi        = 0.0d0
+    sw_state%Sat        = 0.0d0
+    sw_state%beta       = 0.0d0
+    ! Zero flux struct
+    sw_flux%Infiltration = 0.0d0
+    sw_flux%Runoff       = 0.0d0
+    sw_flux%Drainage     = 0.0d0
+    sw_flux%LateralFlow  = 0.0d0
+    sw_flux%ET           = 0.0d0
+    sw_flux%mbe          = 0.0d0
+    ! Copy inout args (soil_water modifies tr, evap, latflow)
+    sw_tr_out      = sw_tr(i)
+    sw_evap_out    = sw_evap(i)
+    sw_latflow_out = sw_latflow(i)
+    ! Call public soil_water
+    call soil_water(sw_state, sw_flux, cwf_para, sw_potinf(i), &
+      sw_tr_out, sw_evap_out, sw_latflow_out)
+    ! Emit JSONL - inputs
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '{"fn":"soil_water","inputs":{"potinf":', sw_potinf(i), &
+      ',"tr":', sw_tr(i), ',"evap":', sw_evap(i), &
+      ',"latflow":', sw_latflow(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"WatSto_in":', sw_WatSto0(i), ',"PondSto_in":', sw_PondSto0(i), &
+      ',"MaxWatSto":', sw_MaxWatSto0(i), ',"MaxPondSto":', sw_MaxPondSto0(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"FcSto":', sw_FcSto0(i), ',"Wliq_in":', sw_Wliq0(i), &
+      ',"Kh_in":', sw_Kh0(i), ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"max_poros":', cwf_para%max_poros, ',"n_van":', cwf_para%n_van, &
+      ',"alpha_van":', cwf_para%alpha_van, ',"watsat":', cwf_para%watsat, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"watres":', cwf_para%watres, ',"ksat":', cwf_para%ksat, &
+      ',"time_step":', time_step, '},'
+    ! Output state
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"output":{"WatSto":', sw_state%WatSto, ',"PondSto":', sw_state%PondSto, &
+      ',"Wliq":', sw_state%Wliq, ',"Sat":', sw_state%Sat, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"beta":', sw_state%beta, ',"Psi":', sw_state%Psi, &
+      ',"Kh":', sw_state%Kh, ','
+    ! Output flux
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"Infiltration":', sw_flux%Infiltration, ',"Drainage":', sw_flux%Drainage, &
+      ',"ET":', sw_flux%ET, ',"Runoff":', sw_flux%Runoff, ','
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      '"LateralFlow":', sw_flux%LateralFlow, ',"mbe":', sw_flux%mbe, &
+      ',"tr_out":', sw_tr_out, ','
+    write(10, '(A,ES22.15,A,ES22.15,A)') &
+      '"evap_out":', sw_evap_out, ',"latflow_out":', sw_latflow_out, '}}'
+    nrec = nrec + 1
+  end do
+
   ! --- Close JSONL file and report summary to stdout ---
   close(10)
   write(*, '(A,I0,A)') 'Emitted ', nrec, ' records to fixtures.jsonl'
@@ -727,6 +1039,182 @@ CONTAINS
 
     ra = ra + rb
   END SUBROUTINE harness_aerodynamics
+
+  ! ================================================================
+  ! Duplicated from water_mod.f90 (ground_evaporation is PRIVATE)
+  ! Exact copy with penman_monteith -> harness_penman_monteith
+  ! ================================================================
+  SUBROUTINE harness_ground_evaporation(canopywater_state, canopywater_flux, &
+      soilwater_state, spafhy_para, T, AE, VPD, Ras, P)
+    real(8), intent(in) :: T, AE, VPD, Ras, P
+    type(canopywater_flux_type), intent(inout) :: canopywater_flux
+    type(soilwater_state_type), intent(in) :: soilwater_state
+    type(canopywater_state_type), intent(in) :: canopywater_state
+    type(spafhy_para_type), intent(in) :: spafhy_para
+
+    real(8) :: Lv, erate, Gas, eps
+    eps = 1.0d-16
+    Lv = 1.0d3 * (3147.5d0 - 2.37d0 * (T + 273.15d0))
+    Gas = 1.0d0 / Ras
+
+    erate = (time_step * 3600.0d0) * soilwater_state%beta * &
+            harness_penman_monteith(AE, VPD, T, spafhy_para%gsoil, Gas, P) / Lv
+
+    ! maximum equals available water
+    canopywater_flux%SoilEvap = min(soilwater_state%WatSto, erate)
+
+    ! PORT-BRANCH: water.ground_evaporation.snow_floor_zero (harness duplicate)
+    ! Condition: SWE > eps -> no evaporation from floor if snow on ground (harness duplicate)
+    if (canopywater_state%SWE > eps) then
+      canopywater_flux%SoilEvap = 0.0d0
+    end if
+  END SUBROUTINE harness_ground_evaporation
+
+  ! ================================================================
+  ! Duplicated from water_mod.f90 (canopy_water_snow is PRIVATE)
+  ! Exact copy with penman_monteith -> harness_penman_monteith
+  ! ================================================================
+  SUBROUTINE harness_canopy_water_snow(canopywater_state, canopywater_flux, &
+      spafhy_para, T, Pre, AE, D, Ra, U, LAI, P)
+    real(8), intent(in) :: T, Pre, AE, D, Ra, U, LAI, P
+    type(canopywater_state_type), intent(inout) :: canopywater_state
+    type(canopywater_flux_type), intent(inout) :: canopywater_flux
+    type(spafhy_para_type), intent(in) :: spafhy_para
+
+    real(8) :: fW, fS, Tmin, Tmax, Tmelt, wmax_tot, wmaxsnow_tot
+    real(8) :: Ga, Ce, Sh, gi, erate, gs, Sice, Sliq, swe_i, swe_l
+    real(8) :: Lv, Ls, SWEo, Wo, Prec, W
+    real(8) :: eps
+    real(8) :: Unload, Interc, Melt, Freeze, Trfall
+    real(8) :: CanopyEvap, PotInfil
+
+    Sice = 0.0d0
+    Sliq = 0.0d0
+    Unload = 0.0d0
+    Interc = 0.0d0
+    Melt = 0.0d0
+    Freeze = 0.0d0
+    Trfall = 0.0d0
+    CanopyEvap = 0.0d0
+    PotInfil = 0.0d0
+    eps = 1.0d-16
+
+    Tmin = 0.0d0
+    Tmax = 1.0d0
+    Tmelt = 0.0d0
+
+    ! PORT-BRANCH: water.canopy_water_snow.precip_phase (harness duplicate)
+    ! Condition: T<=Tmin -> all snow; T>=Tmax -> all rain; between -> mixed (harness duplicate)
+    if (T <= Tmin) then
+      fS = 1.0d0
+      fW = 0.0d0
+    else if (T >= Tmax) then
+      fW = 1.0d0
+      fS = 0.0d0
+    else if ((T > Tmin) .and. (T < Tmax)) then
+      fW = (T - Tmin) / (Tmax - Tmin)
+      fS = 1.0d0 - fW
+    end if
+
+    wmax_tot = spafhy_para%wmax * LAI
+    wmaxsnow_tot = spafhy_para%wmaxsnow * LAI
+
+    Lv = 1.0d3 * (3147.5d0 - 2.37d0 * (T + 273.15d0))
+    Ls = Lv + 3.3d5
+
+    Prec = Pre * time_step * 3600.0d0
+
+    Wo = canopywater_state%CanopyStorage
+    SWEo = canopywater_state%SWE
+
+    W = Wo
+    swe_i = canopywater_state%swe_i
+    swe_l = canopywater_state%swe_l
+
+    Ga = 1.0d0 / Ra
+
+    ! PORT-BRANCH: water.canopy_water_snow.lai_evap_guard (harness duplicate)
+    ! Condition: LAI <= eps -> no canopy evaporation/sublimation (harness duplicate)
+    if (LAI > eps) then
+      Ce = 0.01d0 * ((W + eps) / wmaxsnow_tot)**(-0.4d0)
+      Sh = (1.79d0 + 3.0d0 * U**0.5d0)
+      gi = Sh * W * Ce / 7.68d0 + eps
+
+      erate = 0.0d0
+      ! PORT-BRANCH: water.canopy_water_snow.sublim_vs_evap (harness duplicate)
+      ! Condition: Prec==0 & T<=Tmin -> sublimation; Prec==0 & T>Tmin -> evaporation (harness duplicate)
+      if ((Prec == 0.0d0) .and. (T <= Tmin)) then
+        erate = (time_step * 3600.0d0) / Ls * &
+                harness_penman_monteith(AE, D, T, gi, Ga, P)
+      else if ((Prec == 0.0d0) .and. (T > Tmin)) then
+        gs = 1.0d6
+        erate = (time_step * 3600.0d0) / Lv * &
+                harness_penman_monteith(AE, D, T, gs, Ga, P)
+      end if
+    else
+      erate = 0.0d0
+    end if
+
+    ! PORT-BRANCH: water.canopy_water_snow.snow_unloading (harness duplicate)
+    ! Condition: T >= Tmin -> unload excess beyond wmax_tot (harness duplicate)
+    if (T >= Tmin) then
+      Unload = max(W - wmax_tot, 0.0d0)
+      W = W - Unload
+    end if
+
+    ! PORT-BRANCH: water.canopy_water_snow.interception_phase (harness duplicate)
+    ! Condition: T < Tmin -> snow interception capacity; else -> liquid capacity (harness duplicate)
+    if (T < Tmin) then
+      if (LAI > eps) then
+        Interc = (wmaxsnow_tot - W) * (1.0d0 - exp(-Prec / wmaxsnow_tot))
+      end if
+    else if (T >= Tmin) then
+      if (LAI > eps) then
+        Interc = max(0.0d0, (wmax_tot - W)) * (1.0d0 - exp(-Prec / wmax_tot))
+      end if
+    end if
+
+    W = W + Interc
+    CanopyEvap = min(erate, W + eps)
+    W = W - CanopyEvap
+    Trfall = Prec + Unload - Interc
+
+    ! PORT-BRANCH: water.canopy_water_snow.melt_freeze (harness duplicate)
+    ! Condition: T>=Tmelt -> melt ice; T<Tmelt & swe_l>0 -> freeze liquid; else -> no phase change (harness duplicate)
+    if (T >= Tmelt) then
+      Melt = min(swe_i, spafhy_para%kmelt * (time_step * 3600.0d0) * (T - Tmelt))
+      Freeze = 0.0d0
+    else if (T < Tmelt .and. swe_l > 0.0d0) then
+      Freeze = min(swe_l, spafhy_para%kfreeze * (time_step * 3600.0d0) * (Tmelt - T))
+      Melt = 0.0d0
+    else
+      Freeze = 0.0d0
+      Melt = 0.0d0
+    end if
+
+    Sice = max(0.0d0, swe_i + fS * Trfall + Freeze - Melt)
+    Sliq = max(0.0d0, swe_l + fW * Trfall - Freeze + Melt)
+
+    PotInfil = max(0.0d0, Sliq - Sice * spafhy_para%frac_snowliq)
+    Sliq = max(0.0d0, Sliq - PotInfil)
+
+    canopywater_state%CanopyStorage = W
+    canopywater_state%swe_l = Sliq
+    canopywater_state%swe_i = Sice
+    canopywater_state%SWE = canopywater_state%swe_l + canopywater_state%swe_i
+
+    canopywater_flux%Unloading = Unload
+    canopywater_flux%Interception = Interc
+    canopywater_flux%CanopyEvap = CanopyEvap
+    canopywater_flux%Throughfall = Trfall
+    canopywater_flux%PotInfiltration = PotInfil
+    canopywater_flux%Melt = Melt
+    canopywater_flux%Freeze = Freeze
+
+    canopywater_flux%mbe = (canopywater_state%CanopyStorage + canopywater_state%SWE) - &
+                           (Wo + SWEo) - (Prec - canopywater_flux%CanopyEvap - &
+                           canopywater_flux%PotInfiltration)
+  END SUBROUTINE harness_canopy_water_snow
 
   ! ================================================================
   ! Duplicated from wrapper_yasso.f90 (to avoid heavy yasso20 deps)

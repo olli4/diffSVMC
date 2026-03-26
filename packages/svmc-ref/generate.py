@@ -90,6 +90,10 @@ WATER_FUNCTIONS = {
     "soil_hydraulic_conductivity",
     "aerodynamics",
     "exponential_smooth_met",
+    "canopy_water_snow",
+    "ground_evaporation",
+    "canopy_water_flux",
+    "soil_water",
 }
 
 YASSO_FUNCTIONS = {
