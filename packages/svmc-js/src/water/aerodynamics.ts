@@ -57,7 +57,8 @@ export function aerodynamics(
   using hc_d = params.hc.sub(d);
   using _jaxTmp4 = hc_d.div(zom);
   using _jaxTmp5 = np.log(_jaxTmp4);
-  const Uh = ustar.div(kv).mul(_jaxTmp5);
+  using _UhDiv = ustar.div(kv);
+  const Uh = _UhDiv.mul(_jaxTmp5);
 
   // Ug = Uh * exp(alpha1 * (zn - 1))
   using _jaxTmp6 = zg1.div(params.hc);
@@ -76,7 +77,9 @@ export function aerodynamics(
   using _npConst1 = np.array(kv * kv);
   using _jaxTmp13 = _npConst1.mul(Uo);
   using _npConst2 = np.array(1);
-  using ra_base = _npConst2.div(_jaxTmp13).mul(log_zom).mul(log_zov);
+  using _raB1 = _npConst2.div(_jaxTmp13);
+  using _raB2 = _raB1.mul(log_zom);
+  using ra_base = _raB2.mul(log_zov);
 
   // rb = (1/LAI) * beta * sqrt((w_leaf / Uh) * (alpha1 / (1 - exp(-alpha1/2))))^0.5
   using halfAlpha = alpha1.mul(-0.5);
@@ -91,7 +94,9 @@ export function aerodynamics(
   using _jaxTmp17 = LAI.add(eps);
   using _jaxTmp18 = np.sqrt(rbInner);
   using _npConst4 = np.array(1);
-  using rb_val = _npConst4.div(_jaxTmp17).mul(beta_aero).mul(_jaxTmp18);
+  using _rbV1 = _npConst4.div(_jaxTmp17);
+  using _rbV2 = _rbV1.mul(beta_aero);
+  using rb_val = _rbV2.mul(_jaxTmp18);
 
   // When LAI > eps, use rb_val; otherwise 0 (handled by LAI+eps above)
   const rb = rb_val.add(0); // clone
@@ -106,7 +111,9 @@ export function aerodynamics(
   using _npConst5 = np.array(kv * kv);
   using _jaxTmp21 = _npConst5.mul(Ug);
   using _npConst6 = np.array(1);
-  const ras = _npConst6.div(_jaxTmp21).mul(log_zg).mul(log_zgsv);
+  using _rasB1 = _npConst6.div(_jaxTmp21);
+  using _rasB2 = _rasB1.mul(log_zg);
+  const ras = _rasB2.mul(log_zgsv);
 
   return { ra, rb, ras, ustar, Uh, Ug };
 }
