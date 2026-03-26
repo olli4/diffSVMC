@@ -59,10 +59,27 @@ Combine the confirmed leaf functions into their dependent wrappers.
 - `calc_assim_light_limited` (depends on `quadratic`). ✅ JAX + TS ported, fixture-tested.
 - `calc_gs` (depends on `scale_conductivity`). ✅ JAX + TS ported, fixture-tested.
 - `fn_profit` (objective function forming the core of P-Hydro optimization). ✅ JAX + TS ported, fixture-tested, OOD gradient-tested.
-- **Optimizer Overhaul (`optimise_midterm_multi`)**: ✅ JAX uses `scipy.optimize.minimize` (L-BFGS-B) with `jax.grad` for exact gradients — replacing Fortran's finite-difference approximation. TS uses a custom projected L-BFGS with finite-difference gradients (matching Fortran approach). Both fixture-tested against 6 reference cases.
-  - _JAX vs Fortran tolerance: ~0.3% relative (FD vs AD gradient difference). TS tolerance: ~5% relative (float32 + FD)._
+- **Optimizer Overhaul (`optimise_midterm_multi`)**: ✅ Both JAX and TS now use projected Optax Adam (512 steps, lr=0.05, grad-clipping=10) with traced autodiff (`jax.value_and_grad` / `valueAndGrad`), replacing both Fortran's finite-difference L-BFGS-B and the earlier scipy/custom-L-BFGS approaches. The entire optimizer runs inside `jit`/`lax.scan` (TS) or `jax.lax.fori_loop` (JAX), keeping the optimization composable with larger JIT-compiled loops. Both fixture-tested against 6 reference cases.
+  - _JAX vs Fortran tolerance: ~0.3% relative. TS tolerance: ~5% relative (float32)._
   - _Invariant-tested: VPD monotonicity, drought monotonicity, aj/gs/ci consistency._
-- `pmodel_hydraulics_numerical` (the overarching solver wrapper). ✅ JAX + TS ported, 6 fixture reference cases spanning environmental gradients, invariant-tested.
+- `pmodel_hydraulics_numerical` (the overarching solver wrapper). ✅ JAX + TS ported, 7 fixture reference cases spanning environmental gradients, invariant-tested.
+
+### Phase 2 DoD Status
+
+| Criterion                             | Status                                                                                                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fortran reference covered             | ✅ 65 fixture cases across calc_kmm (13), calc_gs (13), calc_assim_light_limited (13), fn_profit (19), pmodel_hydraulics_numerical (7).                                                                            |
+| Fixture & state contract              | ✅ JSON fixtures shared across svmc-ref, svmc-jax, svmc-js                                                                                                                                                         |
+| Invariant validation                  | ✅ 7 invariant/metamorphic tests in JAX (calc_kmm gradient, fn_profit differentiability + OOD gradients, solver profit positivity, VPD monotonicity, drought monotonicity, aj/gs/ci consistency).                   |
+| Numerically faithful & differentiable | ✅ Both JAX and TS use projected Optax Adam with traced autodiff; entire optimizer runs inside `jit`/`lax.scan` (TS) or `jax.lax.fori_loop` (JAX).                                                                 |
+| Gradients & OOD validated             | ✅ fn_profit OOD (tc=45, patm=60k, vpd=5k), calc_kmm gradient finite, fn_profit differentiable                                                                                                                    |
+| Browser port verified & memory safe   | ✅ 65/65 vitest pass with checkLeaks (zero leaked arrays), ESLint jax-js `recommended` config applied                                                                                                              |
+| Phase-exit gate                       | ✅ pytest (526) + vitest (503) all green.                                                                                                                                                                           |
+
+### Phase 2 Known Shortcuts
+
+- **Optax replaces scipy/Fortran L-BFGS-B**: The JAX solver uses `optax.adam` inside `jax.lax.fori_loop` instead of `scipy.optimize.minimize`. The TS solver uses `lax.scan` with Optax `adam` + `clipByGlobalNorm`. Both match Fortran reference outputs within tolerance but use a fundamentally different optimizer algorithm (first-order Adam vs quasi-Newton L-BFGS-B).
+- **TS float32 tolerance**: TS solver tests use ~5% relative tolerance vs Fortran float64 reference due to float32 arithmetic in the 512-step optimization loop.
 
 ## Phase 3: SpaFHy Submodels (Canopy & Soil Water Balance)
 
