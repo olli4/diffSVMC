@@ -72,6 +72,111 @@ def penman_raw(case: dict[str, object]) -> float:
     return (slope * ae + rho * cp * ga * vpd) / (slope + gamma * (1.0 + ga / gs))
 
 
+def replay_steadystate_cue_iteration(inputs: dict[str, object]) -> tuple[bool, bool]:
+    """Exact replay of eval_steadystate_nitr CUE iteration from fixture inputs.
+
+    Rebuilds the equilibrium state from the initialize_totc fixture inputs, then
+    runs the 10-step CUE iteration and reports whether the upper cap (raw > 1.0)
+    or lower floor (capped < 0.1) was hit during any iteration.
+
+    Returns:
+        (upper_hit, lower_hit): True if that clamp fired in any iteration.
+    """
+    import math
+    import numpy as np_
+
+    param = [float(v) for v in inputs["param"]]
+    totc = float(inputs["totc"])
+    cn_input = float(inputs["cn_input"])
+    fract_root = float(inputs["fract_root_input"])
+    tempr_c = float(inputs["tempr_c"])
+    precip_day = float(inputs["precip_day"])
+    tempr_ampl = float(inputs["tempr_ampl"])
+
+    days_yr = 365.25
+    nc_mb = 0.1
+    cue_min = 0.1
+    nc_h_max = 0.1
+    pi = 3.141592653589793
+    awenh_fineroot = [0.46, 0.32, 0.04, 0.18, 0.0]
+    awenh_leaf = [0.46, 0.32, 0.04, 0.18, 0.0]
+
+    # --- Build matrix (evaluate_matrix_mean_tempr) ---
+    precip_yr = precip_day * days_yr
+    sqrt2 = math.sqrt(2.0)
+    te = [
+        tempr_c + 4 * tempr_ampl * (1 / sqrt2 - 1) / pi,
+        tempr_c - 4 * tempr_ampl / sqrt2 / pi,
+        tempr_c + 4 * tempr_ampl * (1 - 1 / sqrt2) / pi,
+        tempr_c + 4 * tempr_ampl / sqrt2 / pi,
+    ]
+
+    temprm = 0.25 * sum(math.exp(param[21] * t + param[22] * t ** 2) for t in te)
+    temprmN = 0.25 * sum(math.exp(param[23] * t + param[24] * t ** 2) for t in te)
+    temprmH = 0.25 * sum(math.exp(param[25] * t + param[26] * t ** 2) for t in te)
+
+    precip_k = precip_yr * 0.001
+    decm = temprm * (1.0 - math.exp(param[27] * precip_k))
+    decmN = temprmN * (1.0 - math.exp(param[28] * precip_k))
+    decmH = temprmH * (1.0 - math.exp(param[29] * precip_k))
+
+    alpha = [abs(param[i]) for i in range(4)]
+    alpha_h = abs(param[31])
+    dr = [
+        -alpha[0] * decm, -alpha[1] * decm,
+        -alpha[2] * decm, -alpha[3] * decmN,
+        -alpha_h * decmH,
+    ]
+    ad = [abs(d) for d in dr]
+
+    A = np_.zeros((5, 5))
+    for i in range(5):
+        A[i, i] = dr[i]
+    A[0, 1] = param[4] * ad[1];  A[0, 2] = param[5] * ad[2];  A[0, 3] = param[6] * ad[3]
+    A[1, 0] = param[7] * ad[0];  A[1, 2] = param[8] * ad[2];  A[1, 3] = param[9] * ad[3]
+    A[2, 0] = param[10] * ad[0]; A[2, 1] = param[11] * ad[1]; A[2, 3] = param[12] * ad[3]
+    A[3, 0] = param[13] * ad[0]; A[3, 1] = param[14] * ad[1]; A[3, 2] = param[15] * ad[2]
+    A[4, 0] = param[30] * ad[0]; A[4, 1] = param[30] * ad[1]
+    A[4, 2] = param[30] * ad[2]; A[4, 3] = param[30] * ad[3]
+
+    # --- Compute equilibrium state ---
+    unit_input = np_.array([
+        fract_root * awenh_fineroot[i] + (1.0 - fract_root) * awenh_leaf[i]
+        for i in range(5)
+    ])
+    tmpstate = np_.linalg.solve(A, -unit_input)
+    eqfac = totc / np_.sum(tmpstate)
+    eqstate = eqfac * tmpstate
+
+    resp_yr = eqfac
+    nitr_input_yr = eqfac / cn_input
+
+    # --- Run 10-iteration CUE loop ---
+    decomp_h = A[4, 4] * eqstate[4]
+    sum_awen = float(np_.sum(eqstate[:4]))
+    sum_all = float(np_.sum(eqstate))
+
+    upper_hit = False
+    lower_hit = False
+    cue = 0.43
+    for _ in range(10):
+        cupt_awen = (resp_yr - decomp_h) / (1.0 - cue)
+        nc_awen = (1.0 / cupt_awen) * (
+            nc_mb * cue * cupt_awen - nc_h_max * decomp_h + nitr_input_yr
+        )
+        nstate = sum_awen * nc_awen + nc_h_max * eqstate[4]
+        nc_som = nstate / sum_all
+        raw_cue = 0.43 * (nc_som / nc_mb) ** 0.6
+        if raw_cue > 1.0:
+            upper_hit = True
+        capped_cue = min(raw_cue, 1.0)
+        if capped_cue < cue_min:
+            lower_hit = True
+        cue = max(capped_cue, cue_min)
+
+    return upper_hit, lower_hit
+
+
 def compute_fixture_coverage() -> dict[str, bool]:
     phydro = load_json(FIXTURE_DIR / "phydro.json")
     water = load_json(FIXTURE_DIR / "water.json")
@@ -266,8 +371,8 @@ def compute_fixture_coverage() -> dict[str, bool]:
     has_fract_root_guard_false = False
     has_fract_legacy_guard_true = False
     has_fract_legacy_guard_false = False
-    # CUE branches in eval_steadystate_nitr: use approximate nc_som ≈ 1/cn_input
-    # to check whether the CUE clamp extremes are reachable.
+    # CUE branches in eval_steadystate_nitr: exact replay of the 10-iteration
+    # CUE loop using the equilibrium solve from the fixture inputs.
     has_ss_cue_upper_true = False
     has_ss_cue_upper_false = False
     has_ss_cue_lower_true = False
@@ -276,7 +381,6 @@ def compute_fixture_coverage() -> dict[str, bool]:
         inputs = case["inputs"]
         fract_root = float(inputs["fract_root_input"])
         fract_legacy = float(inputs["fract_legacy_soc"])
-        cn_input = float(inputs["cn_input"])
 
         if fract_root < 0.0 or fract_root > 1.0:
             has_fract_root_guard_true = True
@@ -288,18 +392,15 @@ def compute_fixture_coverage() -> dict[str, bool]:
         else:
             has_fract_legacy_guard_false = True
 
-        # Approximate steady-state nc_som from cn_input.
-        # In the Fortran iteration, nc_som converges near 1/cn_input.
-        nc_som_approx = 1.0 / cn_input if cn_input > 0 else 0.0
-        raw_cue_approx = 0.43 * (nc_som_approx / 0.1) ** 0.6
-        capped_cue_approx = min(raw_cue_approx, 1.0)
-
-        if raw_cue_approx > 1.0:
+        # Exact replay of eval_steadystate_nitr CUE iteration.
+        # Reconstruct the equilibrium state from the fixture inputs, then run
+        # the 10-step CUE loop and check whether each clamp fires.
+        upper_hit, lower_hit = replay_steadystate_cue_iteration(inputs)
+        if upper_hit:
             has_ss_cue_upper_true = True
         else:
             has_ss_cue_upper_false = True
-
-        if capped_cue_approx < 0.1:
+        if lower_hit:
             has_ss_cue_lower_true = True
         else:
             has_ss_cue_lower_false = True

@@ -14,7 +14,9 @@
  *   - evalSteadystateNitr: iterative CUE-based steady-state N solver.
  *   - np.linalg.solve: LU-based linear system solver.
  *
- * All operations stay on traced np.Array values for autodiff traceability.
+ * All operations stay on traced np.Array values.
+ * Forward-only: jax-js-nonconsuming does not support reverse-mode
+ * differentiation through np.minimum/np.maximum inside lax.foriLoop.
  */
 
 import { lax } from "@hamk-uas/jax-js-nonconsuming";
@@ -142,7 +144,9 @@ function evaluateMatrixMeanTempr(
  * Fortran reference: vendor/SVMC/src/yasso.f90 L151-182
  *
  * Iterates MAX_CUE_ITER times to converge the CUE-based nitrogen balance.
- * Uses lax.foriLoop for differentiability.
+ * Uses lax.foriLoop for structural parity with JAX.
+ * Forward-only: np.minimum/np.maximum inside the loop body are not
+ * reverse-mode differentiable in jax-js-nonconsuming.
  */
 function evalSteadystateNitr(
   cstate: np.Array,
@@ -218,7 +222,9 @@ function evalSteadystateNitr(
  * @param totc - Total carbon pool (scalar).
  * @param cnInput - C:N ratio of steady-state input (scalar).
  * @param fractRootInput - Fraction of input C with fineroot composition [0,1] (scalar).
+ *   Precondition: must be in [0,1]. Replaces Fortran error_stop guard.
  * @param fractLegacySoc - Legacy carbon fraction [0,1] (scalar).
+ *   Precondition: must be in [0,1]. Replaces Fortran error_stop guard.
  * @param temprC - Mean annual temperature (deg C) (scalar).
  * @param precipDay - Precipitation (mm/day) (scalar).
  * @param temprAmpl - Temperature yearly amplitude (deg C) (scalar).

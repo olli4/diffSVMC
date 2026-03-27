@@ -199,7 +199,9 @@ def initialize_totc(
         totc: Total carbon pool (scalar).
         cn_input: C:N ratio of the steady-state input (scalar).
         fract_root_input: Fraction of input C with fineroot composition [0,1] (scalar).
+            Precondition: must be in [0,1]. Replaces Fortran error_stop guard.
         fract_legacy_soc: Legacy carbon fraction [0,1] (scalar).
+            Precondition: must be in [0,1]. Replaces Fortran error_stop guard.
         tempr_c: Mean annual temperature (°C) (scalar).
         precip_day: Precipitation (mm/day) (scalar).
         tempr_ampl: Temperature yearly amplitude (°C) (scalar).
