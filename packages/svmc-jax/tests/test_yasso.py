@@ -10,6 +10,7 @@ import pytest
 
 from svmc_jax.yasso.leaf_functions import inputs_to_fractions
 from svmc_jax.yasso.matrixexp import matrixexp, matrixnorm
+from svmc_jax.yasso.mod5c20 import mod5c20
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "../../svmc-ref/fixtures"
 YASSO = json.loads((FIXTURES_DIR / "yasso.json").read_text())
@@ -108,4 +109,100 @@ def test_matrixexp_gradient():
     a = jnp.diag(jnp.array([-0.1, -0.2, -0.3, -0.4, -0.5]))
     grad_fn = jax.grad(lambda x: jnp.sum(matrixexp(x)))
     g = grad_fn(a)
+    assert jnp.all(jnp.isfinite(g))
+
+
+# ── mod5c20 ──────────────────────────────────────────────────────────
+
+
+def _mod5c20_id(c):
+    ss = c["inputs"].get("steadystate_pred", False)
+    tag = "ss" if ss else f"t={c['inputs']['time']:.0f}"
+    init_sum = sum(c["inputs"]["init"])
+    b_sum = sum(c["inputs"]["b"])
+    return f"{tag}_init={init_sum:.1f}_b={b_sum:.2f}"
+
+
+@pytest.mark.parametrize("c", YASSO["mod5c20"], ids=_mod5c20_id)
+def test_mod5c20(c):
+    inp = c["inputs"]
+    theta = jnp.array(inp["theta"])
+    time = jnp.array(inp["time"])
+    temp = jnp.array(inp["temp"])
+    prec = jnp.array(inp["prec"])
+    init = jnp.array(inp["init"])
+    b = jnp.array(inp["b"])
+    d = jnp.array(inp["d"])
+    leac = jnp.array(inp["leac"])
+    ss = inp.get("steadystate_pred", False)
+
+    result = mod5c20(theta, time, temp, prec, init, b, d, leac,
+                     steadystate_pred=ss)
+    expected = jnp.array(c["output"])
+    assert jnp.allclose(result, expected, rtol=RTOL)
+
+
+# ── mod5c20 invariants ───────────────────────────────────────────────
+
+
+def test_mod5c20_zero_input_decay():
+    """With zero input, pools should decrease (pure decay)."""
+    # Use case 5 from fixtures: b=0, nonzero init
+    c = [x for x in YASSO["mod5c20"]
+         if sum(x["inputs"]["b"]) == 0.0][0]
+    inp = c["inputs"]
+    result = mod5c20(
+        jnp.array(inp["theta"]), jnp.array(inp["time"]),
+        jnp.array(inp["temp"]), jnp.array(inp["prec"]),
+        jnp.array(inp["init"]), jnp.array(inp["b"]),
+        jnp.array(inp["d"]), jnp.array(inp["leac"]))
+    init = jnp.array(inp["init"])
+    # Total carbon should decrease with no input
+    assert jnp.sum(result) < jnp.sum(init)
+
+
+def test_mod5c20_extreme_cold():
+    """Extreme cold (-80 °C): tem ≈ 3e-8 > TOL so transient path runs,
+    but decomposition is negligible — result ≈ init + b·time."""
+    c = [x for x in YASSO["mod5c20"]
+         if x["inputs"]["temp"][0] == -80.0][0]
+    inp = c["inputs"]
+    result = mod5c20(
+        jnp.array(inp["theta"]), jnp.array(inp["time"]),
+        jnp.array(inp["temp"]), jnp.array(inp["prec"]),
+        jnp.array(inp["init"]), jnp.array(inp["b"]),
+        jnp.array(inp["d"]), jnp.array(inp["leac"]))
+    expected = jnp.array(c["output"])
+    assert jnp.allclose(result, expected, rtol=RTOL)
+
+
+def test_mod5c20_jit():
+    """mod5c20 should be JIT-compilable."""
+    c = YASSO["mod5c20"][0]
+    inp = c["inputs"]
+    args = (jnp.array(inp["theta"]), jnp.array(inp["time"]),
+            jnp.array(inp["temp"]), jnp.array(inp["prec"]),
+            jnp.array(inp["init"]), jnp.array(inp["b"]),
+            jnp.array(inp["d"]), jnp.array(inp["leac"]))
+    jit_fn = jax.jit(mod5c20)
+    result = jit_fn(*args)
+    expected = mod5c20(*args)
+    assert jnp.allclose(result, expected, rtol=1e-12)
+
+
+def test_mod5c20_gradient():
+    """Gradients of mod5c20 w.r.t. init should be finite."""
+    c = YASSO["mod5c20"][0]
+    inp = c["inputs"]
+    theta = jnp.array(inp["theta"])
+    time = jnp.array(inp["time"])
+    temp = jnp.array(inp["temp"])
+    prec = jnp.array(inp["prec"])
+    b = jnp.array(inp["b"])
+    d = jnp.array(inp["d"])
+    leac = jnp.array(inp["leac"])
+
+    grad_fn = jax.grad(lambda x: jnp.sum(
+        mod5c20(theta, time, temp, prec, x, b, d, leac)))
+    g = grad_fn(jnp.array(inp["init"]))
     assert jnp.all(jnp.isfinite(g))

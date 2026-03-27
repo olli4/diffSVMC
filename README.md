@@ -34,7 +34,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 ## Current deviations
 
 - The TypeScript `matrixExp` helper currently uses a bounded masked-squaring policy (`MAX_J = 20`) because the present `lax.foriLoop` API requires a static loop bound. The current reference fixtures explicitly stay within that bound; widening or removing it is required before using the helper on materially larger matrix norms.
-- Phase 4 Yasso validation is still in progress. The current `matrixExp` coverage now mixes analytic sanity cases and matrices generated through the real `yasso20.mod5c20` coefficient-matrix path, but full wrapper-boundary yearly Yasso fixtures are still pending.
+- The TypeScript `mod5c20` uses a wider early-return threshold (`1e-6` vs Fortran's `1e-12`) when running in float32 mode because the transient solver (`A⁻¹(e^{At}z₁ − b)`) suffers catastrophic cancellation for very small `||At||`. In float64 mode the threshold matches Fortran exactly. A numerically stable small-`At` formulation would eliminate the deviation.
 
 ## Current status
 
@@ -44,7 +44,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 | 1 | All leaf functions | ✅ Complete |
 | 2 | P-Hydro assemblies & optimizer | ✅ Complete |
 | 3 | SpaFHy canopy & soil water balance | ✅ Complete |
-| 4 | Carbon allocation & Yasso20 | Planned |
+| 4 | Carbon allocation & Yasso20 | In progress |
 | 5 | Main SVMC integration loop | Planned |
 | 6 | Interactive web application | Planned |
 

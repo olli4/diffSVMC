@@ -19,7 +19,7 @@ PROGRAM harness
   use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity, &
                        canopy_water_flux, soil_water
   use yasso, only: inputs_to_fractions, statesize_yasso
-  use yasso20, only: matrixexp, matrixnorm
+  use yasso20, only: matrixexp, matrixnorm, mod5c20
   use readvegpara_mod, only: par_plant_type, par_cost_type, par_env_type, &
                              par_photosynth_type, optimizer_type, kphio, &
                              opt_hypothesis, conductivity, psi50, b, alpha, &
@@ -121,6 +121,9 @@ PROGRAM harness
   real(8) :: mnorm_p
   real(8) :: mexp_theta(35), mexp_temp(12)
   real(8) :: mexp_time, mexp_prec, mexp_d, mexp_leac
+
+  ! mod5c20 test variables
+  real(8) :: m5c_init(5), m5c_b(5), m5c_xt(5)
 
   integer :: i, j, k, m
   integer :: nrec  ! record counter
@@ -1151,6 +1154,191 @@ PROGRAM harness
   write(10, '(A)') '}'
   nrec = nrec + 1
 
+  ! ================================================================
+  ! 25. mod5c20 — full yearly Yasso20 ODE solver
+  ! ================================================================
+  ! Reuse theta/temp/prec/d/leac from matrixexp section (case 6 setup).
+  ! Reset theta to case-6 values to have a clean starting point.
+  mexp_theta = 0.0d0
+  mexp_theta(1:4) = (/ 0.70d0, 0.45d0, 0.25d0, 0.12d0 /)
+  mexp_theta(5:16) = (/ 0.10d0, 0.05d0, 0.04d0, 0.08d0, &
+                        0.06d0, 0.03d0, 0.04d0, 0.05d0, &
+                        0.02d0, 0.03d0, 0.02d0, 0.01d0 /)
+  mexp_theta(22:30) = (/ 0.08d0, -0.0015d0, 0.06d0, -0.0012d0, &
+                         0.03d0, -0.0008d0, &
+                         -0.50d0, -0.45d0, -0.35d0 /)
+  mexp_theta(31:35) = (/ 0.04d0, 0.006d0, 0.00d0, 0.00d0, 0.00d0 /)
+
+  ! Case 1: Nordic climate, 1-year step, non-zero init + input.
+  mexp_temp = (/ -5.0d0, -3.0d0, 0.0d0, 5.0d0, 10.0d0, 14.0d0, &
+                  16.0d0, 15.0d0, 10.0d0, 5.0d0, 0.0d0, -4.0d0 /)
+  mexp_time = 1.0d0
+  mexp_prec = 650.0d0
+  mexp_d = 0.0d0
+  mexp_leac = 0.0d0
+  m5c_init = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  m5c_b = (/ 0.10d0, 0.08d0, 0.05d0, 0.02d0, 0.0d0 /)
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') '},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
+  ! Case 2: Same Nordic climate, 10-year step (longer horizon).
+  mexp_time = 10.0d0
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') '},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
+  ! Case 3: Warm climate, woody size effect, 4-year step, leaching.
+  mexp_theta(31:35) = (/ 0.05d0, 0.010d0, 0.020d0, 0.0005d0, 0.80d0 /)
+  mexp_temp = (/ 1.0d0, 2.0d0, 5.0d0, 9.0d0, 14.0d0, 18.0d0, &
+                  21.0d0, 20.0d0, 15.0d0, 10.0d0, 5.0d0, 2.0d0 /)
+  mexp_time = 4.0d0
+  mexp_prec = 1200.0d0
+  mexp_d = 12.0d0
+  mexp_leac = 0.0005d0
+  m5c_init = (/ 3.0d0, 2.0d0, 1.5d0, 0.8d0, 8.0d0 /)
+  m5c_b = (/ 0.15d0, 0.12d0, 0.08d0, 0.03d0, 0.0d0 /)
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') '},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
+  ! Case 4: Zero initial state (input-driven growth only).
+  ! Reset to case-1 parameters.
+  mexp_theta(31:35) = (/ 0.04d0, 0.006d0, 0.00d0, 0.00d0, 0.00d0 /)
+  mexp_temp = (/ -5.0d0, -3.0d0, 0.0d0, 5.0d0, 10.0d0, 14.0d0, &
+                  16.0d0, 15.0d0, 10.0d0, 5.0d0, 0.0d0, -4.0d0 /)
+  mexp_time = 1.0d0
+  mexp_prec = 650.0d0
+  mexp_d = 0.0d0
+  mexp_leac = 0.0d0
+  m5c_init = 0.0d0
+  m5c_b = (/ 0.10d0, 0.08d0, 0.05d0, 0.02d0, 0.0d0 /)
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') '},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
+  ! Case 5: Zero input b=0 (pure decay, no litter input).
+  m5c_init = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  m5c_b = 0.0d0
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') '},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
+  ! Case 6: Steady-state prediction (solve A*x = -b for equilibrium).
+  m5c_b = (/ 0.10d0, 0.08d0, 0.05d0, 0.02d0, 0.0d0 /)
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt, &
+               steadystate_pred=.true.)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') ',"steadystate_pred":true},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
+  ! Case 7: Very cold climate — tem ≈ 3e-8 (> tol) so the transient
+  ! path runs, but decomposition is negligible (result ≈ init + b·time).
+  mexp_temp = (/ -80.0d0, -80.0d0, -80.0d0, -80.0d0, -80.0d0, -80.0d0, &
+                  -80.0d0, -80.0d0, -80.0d0, -80.0d0, -80.0d0, -80.0d0 /)
+  m5c_init = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  m5c_b = (/ 0.10d0, 0.08d0, 0.05d0, 0.02d0, 0.0d0 /)
+  call mod5c20(mexp_theta, mexp_time, mexp_temp, mexp_prec, &
+               m5c_init, m5c_b, mexp_d, mexp_leac, m5c_xt)
+  write(10, '(A)', advance='no') '{"fn":"mod5c20","inputs":{' // &
+    '"theta":'
+  call write_vec_json(10, mexp_theta, 35)
+  write(10, '(A,ES22.15,A)', advance='no') ',"time":', mexp_time, ',"temp":'
+  call write_vec_json(10, mexp_temp, 12)
+  write(10, '(A,ES22.15,A)', advance='no') ',"prec":', mexp_prec, ',"init":'
+  call write_vec_json(10, m5c_init, 5)
+  write(10, '(A)', advance='no') ',"b":'
+  call write_vec_json(10, m5c_b, 5)
+  write(10, '(A,ES22.15,A,ES22.15)', advance='no') &
+    ',"d":', mexp_d, ',"leac":', mexp_leac
+  write(10, '(A)', advance='no') '},"output":'
+  call write_vec_json(10, m5c_xt, 5)
+  write(10, '(A)') '}'
+  nrec = nrec + 1
+
   ! --- Close JSONL file and report summary to stdout ---
   close(10)
   write(*, '(A,I0,A)') 'Emitted ', nrec, ' records to fixtures.jsonl'
@@ -1241,6 +1429,21 @@ CONTAINS
     end do
     write(u, '(A)', advance='no') ']'
   END SUBROUTINE write_mat5_json
+
+  ! ================================================================
+  ! Helper: write an n-element vector as JSON array [v1,v2,...]
+  ! ================================================================
+  SUBROUTINE write_vec_json(u, vec, n)
+    integer, intent(in) :: u, n
+    real(8), dimension(n), intent(in) :: vec
+    integer :: vi
+    write(u, '(A)', advance='no') '['
+    do vi = 1, n
+      write(u, '(ES22.15)', advance='no') vec(vi)
+      if (vi < n) write(u, '(A)', advance='no') ','
+    end do
+    write(u, '(A)', advance='no') ']'
+  END SUBROUTINE write_vec_json
 
   ! ================================================================
   ! Duplicated private functions from water_mod.f90

@@ -100,6 +100,7 @@ YASSO_FUNCTIONS = {
     "inputs_to_fractions",
     "matrixnorm",
     "matrixexp",
+    "mod5c20",
 }
 
 
