@@ -1,7 +1,21 @@
 import { describe, it, expect } from "vitest";
+import { numpy as baseNp } from "@hamk-uas/jax-js-nonconsuming";
 import { mod5c20Fn } from "../src/yasso/index.js";
-import { np } from "../src/precision.js";
+import { getNumericDType, np } from "../src/precision.js";
 import yassoFixtures from "../../svmc-ref/fixtures/yasso.json";
+
+// Machine epsilon for the configured numeric dtype.
+const eps = baseNp.finfo(getNumericDType()).eps;
+
+// Relative tolerance derived from critical-path operation depth with ≥2×
+// safety factor.  Critical path: 5×5 matrix construction (~15 ops),
+// Taylor scaling-and-squaring matrixExp (~20 ops), linear solve (~25 ops),
+// total ~60 ops.  Condition number of the Yasso20 coefficient matrix is
+// moderate (κ ≈ 5–20).  Observed max relative error (float32 vs Fortran
+// float64 reference): ~6200·ε for case 3 (warm climate, woody size
+// effect d=12, leaching=5e-4) — pool H carries the largest relative
+// deviation due to its small absolute magnitude.
+const RTOL = 8192 * eps;
 
 type Mod5c20Case = (typeof yassoFixtures.mod5c20)[number];
 
@@ -25,7 +39,7 @@ describe("mod5c20 — Fortran reference", () => {
       const ss = (c.inputs as Record<string, unknown>).steadystate_pred === true;
 
       using result = mod5c20Fn(theta, time, temp, prec, init, b, d, leac, ss);
-      expect(result).toBeAllclose(c.output as number[], { rtol: 1e-3 });
+      expect(result).toBeAllclose(c.output as number[], { rtol: RTOL });
     });
   }
 });
@@ -52,9 +66,8 @@ describe("mod5c20 — invariants", () => {
 
   it("extreme cold: negligible decomposition matches fixture", async () => {
     // Case 6 has -80°C temperatures — tem ≈ 3e-8 (> Fortran TOL 1e-12).
-    // In float32 mode, the widened TOL (1e-6) takes the early-return
-    // path; in float64, the transient path runs. Either way the result
-    // is ≈ init + b·time and matches the fixture within rtol.
+    // The transient solver uses the Taylor branch (||At|| ≪ √ε) to
+    // avoid cancellation in exp(At)·b − b; result ≈ init + b·time.
     const c = yassoFixtures.mod5c20[6];
     using theta = np.array(c.inputs.theta as number[]);
     using time = np.array(c.inputs.time as number);
@@ -66,6 +79,6 @@ describe("mod5c20 — invariants", () => {
     using leac = np.array(c.inputs.leac as number);
 
     using result = mod5c20Fn(theta, time, temp, prec, init, b, d, leac);
-    expect(result).toBeAllclose(c.output as number[], { rtol: 1e-3 });
+    expect(result).toBeAllclose(c.output as number[], { rtol: RTOL });
   });
 });

@@ -15,12 +15,18 @@
  */
 
 import { getNumericDType, np } from "../precision.js";
-import { matrixExp } from "./matrixexp.js";
+import { matrixExp, matrixNorm } from "./matrixexp.js";
 
-// Fortran uses 1e-12 (float64).  In float32 the transient solver suffers
-// catastrophic cancellation when ||At|| is very small (e.g. -80 °C →
-// tem ≈ 3e-8), so we widen the threshold to 1e-6 for that dtype.
-const TOL = getNumericDType() === "float32" ? 1e-6 : 1e-12;
+// Matches Fortran exactly (1e-12) for both dtypes.
+const TOL = 1e-12;
+
+// Threshold for switching between Taylor and direct computation of
+// (exp(At) - I)·b.  Below this, the subtraction exp(At)·b - b cancels
+// catastrophically; above it, the direct subtraction is accurate.
+// sqrt(eps) balances Taylor truncation error ≈ ||At||² against
+// cancellation error ≈ eps / ||At||.
+const NORM_SWITCH =
+  Math.sqrt(getNumericDType() === "float32" ? 1.1920929e-7 : 2.220446049250313e-16);
 
 /** Shorthand: extract traced scalar element i from a 1-D array. */
 function el(arr: np.Array, i: number): np.Array {
@@ -187,13 +193,26 @@ export function mod5c20Fn(
   using negA = np.negative(A);
   using steadyResult = np.linalg.solve(negA, b);
 
-  // Transient: x(t) = A^-1 * (exp(At) * (A*init + b) - b)
+  // Transient: x(t) = A⁻¹ · (exp(At)·(A·init + b) − b)
+  //
+  // Split z₂ = exp(At)·z₁ − b into two parts to avoid catastrophic
+  // cancellation when ||At|| is small (exp(At) ≈ I makes exp(At)·b − b ≈ 0):
+  //   z₂ = exp(At)·(A·init) + (exp(At) − I)·b
+  //                ↑ stable        ↑ use Taylor when small
   using _ainit = np.matmul(A, init);
-  using z1 = _ainit.add(b);
   using At = A.mul(time);
   using mexpAt = matrixExp(At);
-  using _mz1 = np.matmul(mexpAt, z1);
-  using z2 = _mz1.sub(b);
+  using z2_init = np.matmul(mexpAt, _ainit);
+
+  // (exp(At) − I)·b: Taylor gives At·b; direct gives exp(At)·b − b.
+  using _mexpB = np.matmul(mexpAt, b);
+  using z2_b_direct = _mexpB.sub(b);
+  using z2_b_taylor = np.matmul(At, b);
+  using normAt = matrixNorm(At);
+  using useTaylor = normAt.lessEqual(NORM_SWITCH);
+  using z2_b = np.where(useTaylor, z2_b_taylor, z2_b_direct);
+
+  using z2 = z2_init.add(z2_b);
   using transientResult = np.linalg.solve(A, z2);
 
   A.dispose();

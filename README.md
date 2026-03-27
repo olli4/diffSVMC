@@ -34,7 +34,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 ## Current deviations
 
 - The TypeScript `matrixExp` helper currently uses a bounded masked-squaring policy (`MAX_J = 20`) because the present `lax.foriLoop` API requires a static loop bound. The current reference fixtures explicitly stay within that bound; widening or removing it is required before using the helper on materially larger matrix norms.
-- The TypeScript `mod5c20` uses a wider early-return threshold (`1e-6` vs Fortran's `1e-12`) when running in float32 mode because the transient solver (`A⁻¹(e^{At}z₁ − b)`) suffers catastrophic cancellation for very small `||At||`. In float64 mode the threshold matches Fortran exactly. A numerically stable small-`At` formulation would eliminate the deviation.
 
 ## Current status
 
