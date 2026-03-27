@@ -101,6 +101,7 @@ YASSO_FUNCTIONS = {
     "matrixnorm",
     "matrixexp",
     "mod5c20",
+    "decompose",
 }
 
 

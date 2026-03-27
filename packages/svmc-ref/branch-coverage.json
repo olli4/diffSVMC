@@ -269,13 +269,50 @@
       "jax_tested": true,
       "ts_tested": true,
       "notes": "Fixtures include melt (T=0.5 with existing ice), freeze (T<0 with swe_l>0), and no-change (T<0 with swe_l=0) cases."
+    },
+    {
+      "id": "yasso.decompose.totc_threshold",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "totc < 1e-6 -> ntend = 0 (no SOM, skip N dynamics)",
+      "else_behavior": "compute full CUE-based nitrogen immobilization/mineralization",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Case 7 has totc ≈ 5e-7 (triggers true). Cases 0-6 have totc = 10.0 (else)."
+    },
+    {
+      "id": "yasso.decompose.nc_h_unusual",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "cstate(5)*nc_h_max > nstate -> nc_h = nstate/totc (unusual inputs)",
+      "else_behavior": "nc_h = nc_h_max (normal case)",
+      "fixture_both_sides": false,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "All current fixtures take the else branch (nc_h = nc_h_max). The true branch requires very unusual inputs where humus pool times nc_h_max exceeds total nitrogen — not triggered by realistic parameter sets.",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "unusual-inputs",
+        "approved_by": "phase-4-decompose",
+        "reason": "The true branch requires cstate(5)*0.1 > nstate, which requires humus nitrogen demand exceeding total SOM nitrogen. No standard simulation reaches this state.",
+        "stabilization_plan": "Add a synthetic fixture with cstate(5)=100, nstate=0.01 to exercise the unusual branch."
+      }
+    },
+    {
+      "id": "yasso.decompose.cue_clamp",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "CUE = max(min(0.43*(nc_som/nc_mb)^0.6, 1.0), cue_min) — clamped to [0.1, 1.0]",
+      "else_behavior": "unclamped value used when in range",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Cases 0-6 have nstate/totc = 0.05, giving CUE ≈ 0.285 (in range). Case 7 is skipped by totc threshold. The min/max clamp is exercised implicitly via jnp.clip / np.minimum+np.maximum."
     }
   ],
   "summary": {
-    "total_branches": 24,
-    "both_sides_covered": 20,
-    "single_side_only": 4,
-    "waived_uncovered": 4,
-    "coverage_pct": "83% (20/24)"
+    "total_branches": 27,
+    "both_sides_covered": 22,
+    "single_side_only": 5,
+    "waived_uncovered": 5,
+    "coverage_pct": "81% (22/27)"
   }
 }

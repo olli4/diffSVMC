@@ -11,6 +11,7 @@ import pytest
 from svmc_jax.yasso.leaf_functions import inputs_to_fractions
 from svmc_jax.yasso.matrixexp import matrixexp, matrixnorm
 from svmc_jax.yasso.mod5c20 import mod5c20
+from svmc_jax.yasso.decompose import decompose
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "../../svmc-ref/fixtures"
 YASSO = json.loads((FIXTURES_DIR / "yasso.json").read_text())
@@ -257,3 +258,123 @@ def test_mod5c20_norm_switch_boundary():
     r_just_above = mod5c20(theta, time_just_above, temp, prec, init, b, d, leac)
     assert jnp.allclose(r_just_below, r_just_above, rtol=0.05), \
         f"Discontinuity at switch: {r_just_below} vs {r_just_above}"
+
+
+# ── decompose ────────────────────────────────────────────────────────
+
+
+def _decompose_id(c):
+    inp = c["inputs"]
+    totc = sum(inp["cstate"])
+    return f"T={inp['tempr_c']:.0f}_P={inp['precip_day']:.1f}_totC={totc:.1e}"
+
+
+@pytest.mark.parametrize("c", YASSO["decompose"], ids=_decompose_id)
+def test_decompose(c):
+    inp = c["inputs"]
+    param = jnp.array(inp["param"])
+    timestep_days = jnp.array(inp["timestep_days"])
+    tempr_c = jnp.array(inp["tempr_c"])
+    precip_day = jnp.array(inp["precip_day"])
+    cstate = jnp.array(inp["cstate"])
+    nstate = jnp.array(inp["nstate"])
+
+    ctend, ntend = decompose(param, timestep_days, tempr_c, precip_day,
+                             cstate, nstate)
+
+    expected_ctend = jnp.array(c["output"]["ctend"])
+    expected_ntend = c["output"]["ntend"]
+    assert jnp.allclose(ctend, expected_ctend, rtol=RTOL), \
+        f"ctend mismatch: {ctend} vs {expected_ctend}"
+    assert jnp.allclose(ntend, expected_ntend, rtol=RTOL), \
+        f"ntend mismatch: {ntend} vs {expected_ntend}"
+
+
+# ── decompose invariants ─────────────────────────────────────────────
+
+
+def test_decompose_net_carbon_loss():
+    """Without input, decomposition is pure loss: sum(ctend) <= 0."""
+    for c in YASSO["decompose"]:
+        inp = c["inputs"]
+        ctend, _ = decompose(
+            jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+            jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+            jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+        assert float(jnp.sum(ctend)) <= 0.0, \
+            f"Net carbon gain without input: sum(ctend) = {float(jnp.sum(ctend))}"
+
+
+def test_decompose_temperature_monotonicity():
+    """Higher temperature should increase respiration (net C loss)."""
+    # Cases 0-4 have same C state and precip, increasing temperature:
+    # -10, 0, 10, 20, 30 °C (fixture order: 10, 20, 0, -10, 30)
+    cases = YASSO["decompose"][:5]
+    resp = []
+    for c in cases:
+        inp = c["inputs"]
+        ctend, _ = decompose(
+            jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+            jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+            jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+        resp.append((inp["tempr_c"], float(-jnp.sum(ctend))))
+    resp.sort(key=lambda x: x[0])  # sort by temperature
+    for i in range(len(resp) - 1):
+        assert resp[i][1] < resp[i + 1][1], \
+            f"Respiration not monotonic: T={resp[i][0]}→{resp[i + 1][0]}, " \
+            f"resp={resp[i][1]}→{resp[i + 1][1]}"
+
+
+def test_decompose_zero_carbon_branch():
+    """Near-zero carbon state should yield ntend=0."""
+    # Case 7: totc ≈ 5e-7 < 1e-6
+    c = YASSO["decompose"][7]
+    inp = c["inputs"]
+    _, ntend = decompose(
+        jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+        jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+        jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+    assert float(ntend) == 0.0
+
+
+def test_decompose_ntend_finite():
+    """Nitrogen tendency should always be finite."""
+    for c in YASSO["decompose"]:
+        inp = c["inputs"]
+        _, ntend = decompose(
+            jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+            jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+            jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+        assert jnp.isfinite(ntend), f"ntend not finite: {ntend}"
+
+
+def test_decompose_jit():
+    """decompose should be JIT-compilable."""
+    c = YASSO["decompose"][0]
+    inp = c["inputs"]
+    args = (jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+            jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+            jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+    jit_fn = jax.jit(decompose)
+    ctend_jit, ntend_jit = jit_fn(*args)
+    ctend_ref, ntend_ref = decompose(*args)
+    assert jnp.allclose(ctend_jit, ctend_ref, rtol=1e-12)
+    assert jnp.allclose(ntend_jit, ntend_ref, rtol=1e-12)
+
+
+def test_decompose_gradient():
+    """Gradients of decompose w.r.t. cstate should be finite."""
+    c = YASSO["decompose"][0]
+    inp = c["inputs"]
+    param = jnp.array(inp["param"])
+    timestep_days = jnp.array(inp["timestep_days"])
+    tempr_c = jnp.array(inp["tempr_c"])
+    precip_day = jnp.array(inp["precip_day"])
+    nstate = jnp.array(inp["nstate"])
+
+    def loss(cs):
+        ct, nt = decompose(param, timestep_days, tempr_c, precip_day, cs, nstate)
+        return jnp.sum(ct) + nt
+
+    g = jax.grad(loss)(jnp.array(inp["cstate"]))
+    assert jnp.all(jnp.isfinite(g)), f"Non-finite gradient: {g}"

@@ -18,7 +18,8 @@ PROGRAM harness
                        quadratic, pmodel_hydraulics_numerical
   use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity, &
                        canopy_water_flux, soil_water
-  use yasso, only: inputs_to_fractions, statesize_yasso
+  use yasso, only: inputs_to_fractions, statesize_yasso, decompose, &
+                    nc_mb, cue_min, nc_h_max, param_y20_map
   use yasso20, only: matrixexp, matrixnorm, mod5c20
   use readvegpara_mod, only: par_plant_type, par_cost_type, par_env_type, &
                              par_photosynth_type, optimizer_type, kphio, &
@@ -124,6 +125,16 @@ PROGRAM harness
 
   ! mod5c20 test variables
   real(8) :: m5c_init(5), m5c_b(5), m5c_xt(5)
+
+  ! decompose test variables
+  integer, parameter :: NDECOMP = 8
+  real(8) :: dec_param(35)
+  real(8) :: dec_timestep_days
+  real(8) :: dec_tempr_c(NDECOMP)
+  real(8) :: dec_precip_day(NDECOMP)
+  real(8) :: dec_cstate(5,NDECOMP)
+  real(8) :: dec_nstate(NDECOMP)
+  real(8) :: dec_ctend(5), dec_ntend
 
   integer :: i, j, k, m
   integer :: nrec  ! record counter
@@ -1338,6 +1349,54 @@ PROGRAM harness
   call write_vec_json(10, m5c_xt, 5)
   write(10, '(A)') '}'
   nrec = nrec + 1
+
+  ! ================================================================
+  ! 26. decompose — daily C/N decomposition step
+  ! ================================================================
+  dec_param = param_y20_map  ! use the Yasso20 MAP parameters
+  dec_timestep_days = 1.0d0
+
+  ! Test cases: varied temperature and precipitation
+  dec_tempr_c = (/ 10.0d0, 20.0d0, 0.0d0, -10.0d0, 30.0d0, &
+                    10.0d0, 10.0d0, 10.0d0 /)
+  dec_precip_day = (/ 2.0d0, 2.0d0, 2.0d0, 2.0d0, 2.0d0, &
+                      0.5d0, 5.0d0, 2.0d0 /)
+
+  ! Carbon states for testing (5 AWENH pools)
+  ! Cases 1-5: same C state, varied temp & precip
+  dec_cstate(:,1) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  dec_cstate(:,2) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  dec_cstate(:,3) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  dec_cstate(:,4) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  dec_cstate(:,5) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  ! Case 6: same temp as case 1 but low precip
+  dec_cstate(:,6) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  ! Case 7: same temp as case 1 but high precip
+  dec_cstate(:,7) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  ! Case 8: near-zero carbon → triggers totc < 1e-6 branch (ntend=0)
+  dec_cstate(:,8) = (/ 1.0d-7, 1.0d-7, 1.0d-7, 1.0d-7, 1.0d-7 /)
+
+  ! Nitrogen state
+  dec_nstate(1:7) = 0.5d0
+  dec_nstate(8) = 1.0d-8  ! near-zero
+
+  do i = 1, NDECOMP
+    call decompose(dec_param, dec_timestep_days, dec_tempr_c(i), &
+                   dec_precip_day(i), dec_cstate(:,i), dec_nstate(i), &
+                   dec_ctend, dec_ntend)
+    write(10, '(A)', advance='no') '{"fn":"decompose","inputs":{"param":'
+    call write_vec_json(10, dec_param, 35)
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A)', advance='no') &
+      ',"timestep_days":', dec_timestep_days, &
+      ',"tempr_c":', dec_tempr_c(i), &
+      ',"precip_day":', dec_precip_day(i), ',"cstate":'
+    call write_vec_json(10, dec_cstate(:,i), 5)
+    write(10, '(A,ES22.15)', advance='no') ',"nstate":', dec_nstate(i)
+    write(10, '(A)', advance='no') '},"output":{"ctend":'
+    call write_vec_json(10, dec_ctend, 5)
+    write(10, '(A,ES22.15,A)') ',"ntend":', dec_ntend, '}}'
+    nrec = nrec + 1
+  end do
 
   ! --- Close JSONL file and report summary to stdout ---
   close(10)
