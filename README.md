@@ -4,6 +4,8 @@ Differentiable port of the [SVMC](https://github.com/huitang-earth/SVMC) vegetat
 
 The goal is a numerically faithful, fully differentiable reimplementation suitable for gradient-based parameter calibration and interactive browser-based exploration.
 
+🤖 AI generated code & documentation with gentle human supervision.
+
 ## Repository structure
 
 ```
@@ -74,6 +76,10 @@ pnpm vitest run
 # Higher accuracy: float64
 SVMC_JS_DTYPE=float64 pnpm vitest run
 ```
+
+## Authors
+
+Olli Niemitalo (Olli.Niemitalo@hamk.fi) — Supervision of AI coding agents.
 
 ## Third-party code
 
