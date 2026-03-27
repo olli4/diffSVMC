@@ -102,6 +102,7 @@ YASSO_FUNCTIONS = {
     "matrixexp",
     "mod5c20",
     "decompose",
+    "initialize_totc",
 }
 
 

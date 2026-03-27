@@ -19,7 +19,8 @@ PROGRAM harness
   use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity, &
                        canopy_water_flux, soil_water
   use yasso, only: inputs_to_fractions, statesize_yasso, decompose, &
-                    nc_mb, cue_min, nc_h_max, param_y20_map
+                    nc_mb, cue_min, nc_h_max, param_y20_map, &
+                    initialize_totc, awenh_fineroot, awenh_leaf
   use yasso20, only: matrixexp, matrixnorm, mod5c20
   use readvegpara_mod, only: par_plant_type, par_cost_type, par_env_type, &
                              par_photosynth_type, optimizer_type, kphio, &
@@ -135,6 +136,17 @@ PROGRAM harness
   real(8) :: dec_cstate(5,NDECOMP)
   real(8) :: dec_nstate(NDECOMP)
   real(8) :: dec_ctend(5), dec_ntend
+
+  ! initialize_totc test variables
+  integer, parameter :: NINIT_TOTC = 8
+  real(8) :: itc_totc(NINIT_TOTC)
+  real(8) :: itc_cn_input(NINIT_TOTC)
+  real(8) :: itc_fract_root(NINIT_TOTC)
+  real(8) :: itc_fract_legacy(NINIT_TOTC)
+  real(8) :: itc_tempr_c(NINIT_TOTC)
+  real(8) :: itc_precip_day(NINIT_TOTC)
+  real(8) :: itc_tempr_ampl(NINIT_TOTC)
+  real(8) :: itc_cstate_out(5), itc_nstate_out
 
   integer :: i, j, k, m
   integer :: nrec  ! record counter
@@ -1349,6 +1361,73 @@ PROGRAM harness
   call write_vec_json(10, m5c_xt, 5)
   write(10, '(A)') '}'
   nrec = nrec + 1
+
+  ! ================================================================
+  ! 26a. initialize_totc — Yasso C/N pool initialization
+  ! ================================================================
+  ! All cases use Yasso20 MAP parameters
+
+  ! Case 1: Pure equilibrium (no legacy), temperate baseline
+  itc_totc(1) = 10.0d0;     itc_cn_input(1) = 20.0d0
+  itc_fract_root(1) = 0.5d0; itc_fract_legacy(1) = 0.0d0
+  itc_tempr_c(1) = 10.0d0;  itc_precip_day(1) = 2.0d0; itc_tempr_ampl(1) = 10.0d0
+
+  ! Case 2: Full legacy (all carbon in H pool)
+  itc_totc(2) = 10.0d0;     itc_cn_input(2) = 20.0d0
+  itc_fract_root(2) = 0.5d0; itc_fract_legacy(2) = 1.0d0
+  itc_tempr_c(2) = 10.0d0;  itc_precip_day(2) = 2.0d0; itc_tempr_ampl(2) = 10.0d0
+
+  ! Case 3: Half legacy blend
+  itc_totc(3) = 10.0d0;     itc_cn_input(3) = 20.0d0
+  itc_fract_root(3) = 0.5d0; itc_fract_legacy(3) = 0.5d0
+  itc_tempr_c(3) = 10.0d0;  itc_precip_day(3) = 2.0d0; itc_tempr_ampl(3) = 10.0d0
+
+  ! Case 4: All root input
+  itc_totc(4) = 10.0d0;     itc_cn_input(4) = 20.0d0
+  itc_fract_root(4) = 1.0d0; itc_fract_legacy(4) = 0.0d0
+  itc_tempr_c(4) = 10.0d0;  itc_precip_day(4) = 2.0d0; itc_tempr_ampl(4) = 10.0d0
+
+  ! Case 5: All leaf input (metamorphic: should match case 4, since awenh_leaf == awenh_fineroot)
+  itc_totc(5) = 10.0d0;     itc_cn_input(5) = 20.0d0
+  itc_fract_root(5) = 0.0d0; itc_fract_legacy(5) = 0.0d0
+  itc_tempr_c(5) = 10.0d0;  itc_precip_day(5) = 2.0d0; itc_tempr_ampl(5) = 10.0d0
+
+  ! Case 6: Cold climate with large amplitude
+  itc_totc(6) = 10.0d0;     itc_cn_input(6) = 20.0d0
+  itc_fract_root(6) = 0.5d0; itc_fract_legacy(6) = 0.0d0
+  itc_tempr_c(6) = -5.0d0;  itc_precip_day(6) = 1.0d0; itc_tempr_ampl(6) = 20.0d0
+
+  ! Case 7: High total carbon
+  itc_totc(7) = 100.0d0;    itc_cn_input(7) = 20.0d0
+  itc_fract_root(7) = 0.5d0; itc_fract_legacy(7) = 0.0d0
+  itc_tempr_c(7) = 10.0d0;  itc_precip_day(7) = 2.0d0; itc_tempr_ampl(7) = 10.0d0
+
+  ! Case 8: Low total carbon
+  itc_totc(8) = 0.1d0;      itc_cn_input(8) = 15.0d0
+  itc_fract_root(8) = 0.3d0; itc_fract_legacy(8) = 0.2d0
+  itc_tempr_c(8) = 15.0d0;  itc_precip_day(8) = 3.0d0; itc_tempr_ampl(8) = 5.0d0
+
+  do i = 1, NINIT_TOTC
+    call initialize_totc(param_y20_map, itc_totc(i), itc_cn_input(i), &
+                         itc_fract_root(i), itc_fract_legacy(i), &
+                         itc_tempr_c(i), itc_precip_day(i), itc_tempr_ampl(i), &
+                         itc_cstate_out, itc_nstate_out)
+    write(10, '(A)', advance='no') '{"fn":"initialize_totc","inputs":{"param":'
+    call write_vec_json(10, param_y20_map, 35)
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15)', advance='no') &
+      ',"totc":', itc_totc(i), &
+      ',"cn_input":', itc_cn_input(i), &
+      ',"fract_root_input":', itc_fract_root(i)
+    write(10, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15)', advance='no') &
+      ',"fract_legacy_soc":', itc_fract_legacy(i), &
+      ',"tempr_c":', itc_tempr_c(i), &
+      ',"precip_day":', itc_precip_day(i), &
+      ',"tempr_ampl":', itc_tempr_ampl(i)
+    write(10, '(A)', advance='no') '},"output":{"cstate":'
+    call write_vec_json(10, itc_cstate_out, 5)
+    write(10, '(A,ES22.15,A)') ',"nstate":', itc_nstate_out, '}}'
+    nrec = nrec + 1
+  end do
 
   ! ================================================================
   ! 26. decompose — daily C/N decomposition step

@@ -316,13 +316,81 @@
       "jax_tested": true,
       "ts_tested": true,
       "notes": "Case 9 explicitly drives nc_som low enough to hit the cue_min floor without triggering the unusual humus branch; baseline cases stay above the floor."
+    },
+    {
+      "id": "yasso.eval_steadystate_nitr.cue_upper_cap",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "0.43 * (nc_som / nc_mb) ** 0.6 > 1.0 -> cap raw CUE at 1.0 in steadystate iteration",
+      "else_behavior": "leave raw CUE unchanged before the lower-floor check",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "Same CUE clamp math as decompose. Fixtures stay below the upper cap.",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "fatal-path",
+        "approved_by": "phase-4-initialize-totc",
+        "reason": "The true arm feeds cue=1.0 into cupt_awen = (resp - decomp_h) / (1.0 - cue), producing a zero denominator and non-finite output.",
+        "safe_test_strategy": "Keep tagged and uncovered until the reference implementation defines non-fatal behavior for cue = 1.0."
+      }
+    },
+    {
+      "id": "yasso.eval_steadystate_nitr.cue_lower_floor",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "min(raw_cue, 1.0) < cue_min -> floor CUE at cue_min in steadystate iteration",
+      "else_behavior": "leave the capped CUE unchanged",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "With cn_input=25, the N:C ratio stays above the cue_min threshold across all fixture cases. Only extremely low nitrogen inputs can trigger the floor.",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "fixture-gap",
+        "approved_by": "phase-4-initialize-totc",
+        "reason": "Typical parameterizations with cn_input=25 produce CUE values in the 0.3-0.5 range, well above cue_min=0.1. Additional fixture cases with extremely high cn_input would be needed.",
+        "next_action": "Add a fixture with cn_input >> 100 to drive nc_som low enough to trigger the floor."
+      }
+    },
+    {
+      "id": "yasso.initialize_totc.fract_root_input_guard",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "fract_root_input < 0 or fract_root_input > 1 -> error stop",
+      "else_behavior": "continue with valid fraction",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "All fixture cases use fract_root_input in [0, 0.3, 0.5, 1.0] (valid range).",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "fatal-path",
+        "approved_by": "phase-4-initialize-totc",
+        "reason": "The true arm is an error stop that terminates the Fortran program. The JAX/TS ports omit this guard since it validates input range, not compute logic.",
+        "safe_test_strategy": "Input validation is handled at the caller level; this runtime check is not ported."
+      }
+    },
+    {
+      "id": "yasso.initialize_totc.fract_legacy_soc_guard",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "fract_legacy_soc < 0 or fract_legacy_soc > 1 -> error stop",
+      "else_behavior": "continue with valid fraction",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "All fixture cases use fract_legacy_soc in [0, 0.5, 1.0] (valid range).",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "fatal-path",
+        "approved_by": "phase-4-initialize-totc",
+        "reason": "The true arm is an error stop that terminates the Fortran program. The JAX/TS ports omit this guard since it validates input range, not compute logic.",
+        "safe_test_strategy": "Input validation is handled at the caller level; this runtime check is not ported."
+      }
     }
   ],
   "summary": {
-    "total_branches": 28,
+    "total_branches": 32,
     "both_sides_covered": 23,
-    "single_side_only": 5,
-    "waived_uncovered": 5,
-    "coverage_pct": "82% (23/28)"
+    "single_side_only": 9,
+    "waived_uncovered": 9,
+    "coverage_pct": "72% (23/32)"
   }
 }

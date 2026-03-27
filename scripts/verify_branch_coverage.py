@@ -92,6 +92,7 @@ def compute_fixture_coverage() -> dict[str, bool]:
     penman_cases = list(water["penman_monteith"])
     smooth_cases = list(water["exponential_smooth_met"])
     decompose_cases = list(yasso.get("decompose", []))
+    init_totc_cases = list(yasso.get("initialize_totc", []))
     has_pm_hypothesis = any(str(case["inputs"].get("hypothesis", "PM")) == "PM" for case in fn_profit_cases)
     has_non_pm_hypothesis = any(str(case["inputs"].get("hypothesis", "PM")) != "PM" for case in fn_profit_cases)
     has_do_optim_true = any(bool(case["inputs"].get("do_optim", False)) for case in fn_profit_cases)
@@ -259,6 +260,50 @@ def compute_fixture_coverage() -> dict[str, bool]:
         else:
             has_cue_lower_false = True
 
+    # --- Phase 4: initialize_totc ---
+    # Guard branches: check if any fixture has invalid fract values.
+    has_fract_root_guard_true = False
+    has_fract_root_guard_false = False
+    has_fract_legacy_guard_true = False
+    has_fract_legacy_guard_false = False
+    # CUE branches in eval_steadystate_nitr: use approximate nc_som ≈ 1/cn_input
+    # to check whether the CUE clamp extremes are reachable.
+    has_ss_cue_upper_true = False
+    has_ss_cue_upper_false = False
+    has_ss_cue_lower_true = False
+    has_ss_cue_lower_false = False
+    for case in init_totc_cases:
+        inputs = case["inputs"]
+        fract_root = float(inputs["fract_root_input"])
+        fract_legacy = float(inputs["fract_legacy_soc"])
+        cn_input = float(inputs["cn_input"])
+
+        if fract_root < 0.0 or fract_root > 1.0:
+            has_fract_root_guard_true = True
+        else:
+            has_fract_root_guard_false = True
+
+        if fract_legacy < 0.0 or fract_legacy > 1.0:
+            has_fract_legacy_guard_true = True
+        else:
+            has_fract_legacy_guard_false = True
+
+        # Approximate steady-state nc_som from cn_input.
+        # In the Fortran iteration, nc_som converges near 1/cn_input.
+        nc_som_approx = 1.0 / cn_input if cn_input > 0 else 0.0
+        raw_cue_approx = 0.43 * (nc_som_approx / 0.1) ** 0.6
+        capped_cue_approx = min(raw_cue_approx, 1.0)
+
+        if raw_cue_approx > 1.0:
+            has_ss_cue_upper_true = True
+        else:
+            has_ss_cue_upper_false = True
+
+        if capped_cue_approx < 0.1:
+            has_ss_cue_lower_true = True
+        else:
+            has_ss_cue_lower_false = True
+
     coverage = {
         "phydro.ftemp_kphio.c4_select": bool(c3_cases) and bool(c4_cases),
         "phydro.ftemp_kphio.negative_clamp": any(float(case["output"]) == 0.0 for case in kphio_cases)
@@ -293,6 +338,10 @@ def compute_fixture_coverage() -> dict[str, bool]:
         "yasso.decompose.nc_h_unusual": has_nc_h_unusual_true and has_nc_h_unusual_false,
         "yasso.decompose.cue_upper_cap": has_cue_upper_true and has_cue_upper_false,
         "yasso.decompose.cue_lower_floor": has_cue_lower_true and has_cue_lower_false,
+        "yasso.eval_steadystate_nitr.cue_upper_cap": has_ss_cue_upper_true and has_ss_cue_upper_false,
+        "yasso.eval_steadystate_nitr.cue_lower_floor": has_ss_cue_lower_true and has_ss_cue_lower_false,
+        "yasso.initialize_totc.fract_root_input_guard": has_fract_root_guard_true and has_fract_root_guard_false,
+        "yasso.initialize_totc.fract_legacy_soc_guard": has_fract_legacy_guard_true and has_fract_legacy_guard_false,
     }
     return coverage
 

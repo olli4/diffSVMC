@@ -12,6 +12,7 @@ from svmc_jax.yasso.leaf_functions import inputs_to_fractions
 from svmc_jax.yasso.matrixexp import matrixexp, matrixnorm
 from svmc_jax.yasso.mod5c20 import mod5c20
 from svmc_jax.yasso.decompose import decompose
+from svmc_jax.yasso.initialize_totc import initialize_totc
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "../../svmc-ref/fixtures"
 YASSO = json.loads((FIXTURES_DIR / "yasso.json").read_text())
@@ -411,3 +412,142 @@ def test_decompose_gradient():
 
     g = jax.grad(loss)(jnp.array(inp["cstate"]))
     assert jnp.all(jnp.isfinite(g)), f"Non-finite gradient: {g}"
+
+
+# ── initialize_totc ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("c", YASSO["initialize_totc"],
+    ids=lambda c: f"totc={c['inputs']['totc']}_legacy={c['inputs']['fract_legacy_soc']}"
+                  f"_root={c['inputs']['fract_root_input']}"
+                  f"_T={c['inputs']['tempr_c']}")
+def test_initialize_totc(c):
+    """Fixture playback: initialize_totc should match Fortran reference."""
+    inp = c["inputs"]
+    cstate, nstate = initialize_totc(
+        jnp.array(inp["param"]),
+        jnp.array(inp["totc"]),
+        jnp.array(inp["cn_input"]),
+        jnp.array(inp["fract_root_input"]),
+        jnp.array(inp["fract_legacy_soc"]),
+        jnp.array(inp["tempr_c"]),
+        jnp.array(inp["precip_day"]),
+        jnp.array(inp["tempr_ampl"]),
+    )
+    expected_cstate = jnp.array(c["output"]["cstate"])
+    expected_nstate = c["output"]["nstate"]
+    assert jnp.allclose(cstate, expected_cstate, rtol=RTOL), \
+        f"cstate mismatch: {cstate} vs {expected_cstate}"
+    assert jnp.allclose(nstate, expected_nstate, rtol=RTOL), \
+        f"nstate mismatch: {nstate} vs {expected_nstate}"
+
+
+def test_initialize_totc_carbon_conservation():
+    """Total carbon in output should equal requested totc."""
+    for c in YASSO["initialize_totc"]:
+        inp = c["inputs"]
+        cstate, _ = initialize_totc(
+            jnp.array(inp["param"]),
+            jnp.array(inp["totc"]),
+            jnp.array(inp["cn_input"]),
+            jnp.array(inp["fract_root_input"]),
+            jnp.array(inp["fract_legacy_soc"]),
+            jnp.array(inp["tempr_c"]),
+            jnp.array(inp["precip_day"]),
+            jnp.array(inp["tempr_ampl"]),
+        )
+        assert jnp.allclose(jnp.sum(cstate), inp["totc"], rtol=1e-6), \
+            f"Carbon not conserved: sum(cstate)={float(jnp.sum(cstate))} vs totc={inp['totc']}"
+
+
+def test_initialize_totc_leaf_root_equivalence():
+    """awenh_fineroot == awenh_leaf, so fract_root_input should have no effect."""
+    cases = YASSO["initialize_totc"]
+    # Find pairs with same totc, cn_input, legacy, climate but different fract_root_input
+    case4 = next(c for c in cases if c["inputs"]["fract_root_input"] == 1.0
+                 and c["inputs"]["fract_legacy_soc"] == 0.0)
+    case5 = next(c for c in cases if c["inputs"]["fract_root_input"] == 0.0
+                 and c["inputs"]["fract_legacy_soc"] == 0.0
+                 and c["inputs"]["totc"] == case4["inputs"]["totc"])
+    assert jnp.allclose(
+        jnp.array(case4["output"]["cstate"]),
+        jnp.array(case5["output"]["cstate"]),
+        rtol=1e-12,
+    ), "Root-only and leaf-only inputs should give identical results"
+
+
+def test_initialize_totc_linearity_in_totc():
+    """Output should scale linearly with totc (same climate & fractions)."""
+    cases = YASSO["initialize_totc"]
+    base = next(c for c in cases if c["inputs"]["totc"] == 10.0
+                and c["inputs"]["fract_legacy_soc"] == 0.0
+                and c["inputs"]["tempr_c"] == 10.0)
+    scaled = next(c for c in cases if c["inputs"]["totc"] == 100.0
+                  and c["inputs"]["fract_legacy_soc"] == 0.0
+                  and c["inputs"]["tempr_c"] == 10.0)
+    factor = scaled["inputs"]["totc"] / base["inputs"]["totc"]
+    assert jnp.allclose(
+        jnp.array(scaled["output"]["cstate"]),
+        jnp.array(base["output"]["cstate"]) * factor,
+        rtol=1e-6,
+    ), "C pools should scale linearly with totc"
+    assert jnp.allclose(
+        scaled["output"]["nstate"],
+        base["output"]["nstate"] * factor,
+        rtol=1e-6,
+    ), "N pool should scale linearly with totc"
+
+
+def test_initialize_totc_full_legacy_all_h():
+    """Full legacy (fract_legacy_soc=1) should put all C in H pool."""
+    c = next(c for c in YASSO["initialize_totc"]
+             if c["inputs"]["fract_legacy_soc"] == 1.0)
+    cstate = jnp.array(c["output"]["cstate"])
+    assert jnp.allclose(cstate[:4], 0.0, atol=1e-15), "AWEN pools should be zero"
+    assert jnp.allclose(cstate[4], c["inputs"]["totc"], rtol=1e-10), \
+        "H pool should equal totc"
+    assert jnp.allclose(c["output"]["nstate"], c["inputs"]["totc"] * 0.1, rtol=1e-10), \
+        "N should equal totc * nc_h_max"
+
+
+def test_initialize_totc_gradient():
+    """Gradients of initialize_totc w.r.t. totc should be finite and non-zero."""
+    c = YASSO["initialize_totc"][0]
+    inp = c["inputs"]
+
+    def loss(totc):
+        cs, ns = initialize_totc(
+            jnp.array(inp["param"]), totc,
+            jnp.array(inp["cn_input"]),
+            jnp.array(inp["fract_root_input"]),
+            jnp.array(inp["fract_legacy_soc"]),
+            jnp.array(inp["tempr_c"]),
+            jnp.array(inp["precip_day"]),
+            jnp.array(inp["tempr_ampl"]),
+        )
+        return jnp.sum(cs) + ns
+
+    g = jax.grad(loss)(jnp.array(inp["totc"]))
+    assert jnp.isfinite(g), f"Gradient not finite: {g}"
+    assert g != 0.0, "Gradient should be non-zero"
+
+
+def test_initialize_totc_jit():
+    """initialize_totc should be JIT-compilable."""
+    c = YASSO["initialize_totc"][0]
+    inp = c["inputs"]
+    args = (
+        jnp.array(inp["param"]),
+        jnp.array(inp["totc"]),
+        jnp.array(inp["cn_input"]),
+        jnp.array(inp["fract_root_input"]),
+        jnp.array(inp["fract_legacy_soc"]),
+        jnp.array(inp["tempr_c"]),
+        jnp.array(inp["precip_day"]),
+        jnp.array(inp["tempr_ampl"]),
+    )
+    jit_fn = jax.jit(initialize_totc)
+    cs_jit, ns_jit = jit_fn(*args)
+    cs_ref, ns_ref = initialize_totc(*args)
+    assert jnp.allclose(cs_jit, cs_ref, rtol=1e-12)
+    assert jnp.allclose(ns_jit, ns_ref, rtol=1e-12)
