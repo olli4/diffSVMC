@@ -18,6 +18,21 @@ To prevent technical debt and ensure a rigorous port, every function/submodel mu
 9. **Phase-Exit Gate**: A submodel's phase is complete only when all criteria pass in CI (`branch:audit` + pytest + vitest). Do not begin the next phase until the gate is green.
 10. **No Silent Shortcuts**: If any criterion above is partially met or intentionally deferred, document the gap explicitly in the phase status below with a rationale. Do not mark a criterion as complete when coverage is incomplete, evaluator logic is looser than the actual branch guard, or tolerances are still provisional.
 
+### Port Audit Checklist
+
+Use this checklist before marking any submodel port complete.
+
+- [ ] Add `PORT-BRANCH` tags in the vendor reference for every materially distinct arm being claimed.
+- [ ] Add explicit harness fixtures for each defined branch arm; do not rely on baseline sweeps to hit unusual guards by accident.
+- [ ] If a branch is defined and easy to trigger synthetically, add the fixture instead of waiving it.
+- [ ] If a branch remains uncovered, use only an allowed waiver kind from `scripts/verify_branch_coverage.py` and document why the arm is dead, undefined, or fatal.
+- [ ] Teach `scripts/verify_branch_coverage.py` how to compute coverage for the new branch IDs before editing `branch-coverage.json`.
+- [ ] Run `python3 scripts/verify_branch_coverage.py` after regenerating fixtures; never hand-edit summary counts without rerunning the audit.
+- [ ] Keep coverage claims arm-specific: split multi-stage clamps or three-way conditionals into separate branch entries when the arms can fail independently.
+- [ ] Make fixture notes, case labels, or test selectors reveal which branch-triggering cases are intentional.
+- [ ] Keep commit messages and status notes limited to validations that actually exist in code.
+- [ ] Do not advance the phase while any coverage claim, waiver, tolerance, or test description is still provisional.
+
 ## Phase 0: Project Foundation & Initial Porting (Completed)
 
 - **Repo Setup**: Established monorepo (`svmc-ref`, `svmc-jax`, `svmc-js`).

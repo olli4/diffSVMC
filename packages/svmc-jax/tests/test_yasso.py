@@ -269,6 +269,10 @@ def _decompose_id(c):
     return f"T={inp['tempr_c']:.0f}_P={inp['precip_day']:.1f}_totC={totc:.1e}"
 
 
+def _find_decompose_case(predicate):
+    return next(c for c in YASSO["decompose"] if predicate(c["inputs"]))
+
+
 @pytest.mark.parametrize("c", YASSO["decompose"], ids=_decompose_id)
 def test_decompose(c):
     inp = c["inputs"]
@@ -327,14 +331,43 @@ def test_decompose_temperature_monotonicity():
 
 def test_decompose_zero_carbon_branch():
     """Near-zero carbon state should yield ntend=0."""
-    # Case 7: totc ≈ 5e-7 < 1e-6
-    c = YASSO["decompose"][7]
+    c = _find_decompose_case(lambda inp: sum(inp["cstate"]) < 1e-6)
     inp = c["inputs"]
     _, ntend = decompose(
         jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
         jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
         jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
     assert float(ntend) == 0.0
+
+
+def test_decompose_nc_h_unusual_branch():
+    """Explicit fixture should trigger the unusual humus N:C branch."""
+    c = _find_decompose_case(
+        lambda inp: inp["cstate"][4] * 0.1 > inp["nstate"] and sum(inp["cstate"]) >= 1e-6
+    )
+    inp = c["inputs"]
+    ctend, ntend = decompose(
+        jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+        jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+        jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+    assert jnp.all(jnp.isfinite(ctend))
+    assert jnp.isfinite(ntend)
+
+
+def test_decompose_cue_lower_floor_branch():
+    """Explicit fixture should drive raw CUE below cue_min and hit the floor."""
+    cue_lower_threshold = 0.008794663773278361
+    c = _find_decompose_case(
+        lambda inp: sum(inp["cstate"]) >= 1e-6
+        and inp["cstate"][4] * 0.1 <= inp["nstate"]
+        and (inp["nstate"] / sum(inp["cstate"])) < cue_lower_threshold
+    )
+    inp = c["inputs"]
+    _, ntend = decompose(
+        jnp.array(inp["param"]), jnp.array(inp["timestep_days"]),
+        jnp.array(inp["tempr_c"]), jnp.array(inp["precip_day"]),
+        jnp.array(inp["cstate"]), jnp.array(inp["nstate"]))
+    assert jnp.isfinite(ntend)
 
 
 def test_decompose_ntend_finite():

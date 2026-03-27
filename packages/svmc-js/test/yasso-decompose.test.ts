@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { numpy as baseNp } from "@hamk-uas/jax-js-nonconsuming";
+import { numpy as baseNp, valueAndGrad } from "@hamk-uas/jax-js-nonconsuming";
 import { decomposeFn } from "../src/yasso/index.js";
 import { getNumericDType, np } from "../src/precision.js";
 import yassoFixtures from "../../svmc-ref/fixtures/yasso.json";
@@ -19,6 +19,14 @@ function caseLabel(c: DecomposeCase, i: number): string {
   const inp = c.inputs;
   const totC = (inp.cstate as number[]).reduce((a, b) => a + b, 0);
   return `case ${i}: T=${inp.tempr_c}, P=${inp.precip_day}, totC=${totC.toExponential(1)}`;
+}
+
+function findDecomposeCase(predicate: (inputs: DecomposeCase["inputs"]) => boolean): DecomposeCase {
+  const found = yassoFixtures.decompose.find((c) => predicate(c.inputs));
+  if (!found) {
+    throw new Error("Expected decompose fixture case was not found");
+  }
+  return found;
 }
 
 describe("decompose — Fortran reference", () => {
@@ -94,8 +102,8 @@ describe("decompose — invariants", () => {
   });
 
   it("near-zero carbon yields ntend = 0", async () => {
-    // Case 7: totc ≈ 5e-7 < 1e-6
-    const c = yassoFixtures.decompose[7];
+    const c = findDecomposeCase((inp) =>
+      (inp.cstate as number[]).reduce((a, b) => a + b, 0) < 1e-6);
     using param = np.array(c.inputs.param as number[]);
     using timestepDays = np.array(c.inputs.timestep_days as number);
     using temprC = np.array(c.inputs.tempr_c as number);
@@ -109,6 +117,48 @@ describe("decompose — invariants", () => {
     using _ctend = ctend;
     using _ntend = ntend;
     expect(ntend.item()).toBe(0);
+  });
+
+  it("explicit fixture triggers the unusual humus N:C branch", async () => {
+    const c = findDecomposeCase((inp) =>
+      inp.cstate[4] * 0.1 > inp.nstate
+      && (inp.cstate as number[]).reduce((a, b) => a + b, 0) >= 1e-6);
+    using param = np.array(c.inputs.param as number[]);
+    using timestepDays = np.array(c.inputs.timestep_days as number);
+    using temprC = np.array(c.inputs.tempr_c as number);
+    using precipDay = np.array(c.inputs.precip_day as number);
+    using cstate = np.array(c.inputs.cstate as number[]);
+    using nstate = np.array(c.inputs.nstate as number);
+
+    const { ctend, ntend } = decomposeFn(
+      param, timestepDays, temprC, precipDay, cstate, nstate,
+    );
+    using _ctend = ctend;
+    using _ntend = ntend;
+    expect(Number.isFinite(ntend.item())).toBe(true);
+  });
+
+  it("explicit fixture triggers the CUE lower floor branch", async () => {
+    const cueLowerThreshold = 0.008794663773278361;
+    const c = findDecomposeCase((inp) => {
+      const totC = (inp.cstate as number[]).reduce((a, b) => a + b, 0);
+      return totC >= 1e-6
+        && inp.cstate[4] * 0.1 <= inp.nstate
+        && inp.nstate / totC < cueLowerThreshold;
+    });
+    using param = np.array(c.inputs.param as number[]);
+    using timestepDays = np.array(c.inputs.timestep_days as number);
+    using temprC = np.array(c.inputs.tempr_c as number);
+    using precipDay = np.array(c.inputs.precip_day as number);
+    using cstate = np.array(c.inputs.cstate as number[]);
+    using nstate = np.array(c.inputs.nstate as number);
+
+    const { ctend, ntend } = decomposeFn(
+      param, timestepDays, temprC, precipDay, cstate, nstate,
+    );
+    using _ctend = ctend;
+    using _ntend = ntend;
+    expect(Number.isFinite(ntend.item())).toBe(true);
   });
 
   it("ntend is finite for all cases", async () => {
@@ -127,5 +177,32 @@ describe("decompose — invariants", () => {
       using _ntend = ntend;
       expect(Number.isFinite(ntend.item())).toBe(true);
     }
+  });
+
+  it("decompose remains differentiable w.r.t. cstate", async () => {
+    const c = yassoFixtures.decompose[0];
+    using param = np.array(c.inputs.param as number[]);
+    using timestepDays = np.array(c.inputs.timestep_days as number);
+    using temprC = np.array(c.inputs.tempr_c as number);
+    using precipDay = np.array(c.inputs.precip_day as number);
+    using nstate = np.array(c.inputs.nstate as number);
+
+    const loss = (cs: np.Array) => {
+      const { ctend, ntend } = decomposeFn(param, timestepDays, temprC, precipDay, cs, nstate);
+      using _ctend = ctend;
+      using _ntend = ntend;
+      using sumCtend = np.sum(ctend);
+      return sumCtend.add(ntend);
+    };
+
+    const gradFn = valueAndGrad(loss);
+    using cstate = np.array(c.inputs.cstate as number[]);
+    const [value, grad] = gradFn(cstate);
+    expect(Number.isFinite(value.item())).toBe(true);
+    using finiteGrad = np.isfinite(grad);
+    using allFiniteGrad = np.all(finiteGrad);
+    expect(allFiniteGrad.item()).toBe(1);
+    value.dispose();
+    grad.dispose();
   });
 });

@@ -278,41 +278,51 @@
       "fixture_both_sides": true,
       "jax_tested": true,
       "ts_tested": true,
-      "notes": "Case 7 has totc ≈ 5e-7 (triggers true). Cases 0-6 have totc = 10.0 (else)."
+      "notes": "Case 7 has totc ≈ 5e-7 (triggers true). Cases 0-6, 8-9 stay in the full nitrogen path."
     },
     {
       "id": "yasso.decompose.nc_h_unusual",
       "file": "vendor/SVMC/src/yasso.f90",
       "condition": "cstate(5)*nc_h_max > nstate -> nc_h = nstate/totc (unusual inputs)",
       "else_behavior": "nc_h = nc_h_max (normal case)",
-      "fixture_both_sides": false,
-      "jax_tested": true,
-      "ts_tested": true,
-      "notes": "All current fixtures take the else branch (nc_h = nc_h_max). The true branch requires very unusual inputs where humus pool times nc_h_max exceeds total nitrogen — not triggered by realistic parameter sets.",
-      "waiver": {
-        "scope": "fixture-both-sides",
-        "kind": "unusual-inputs",
-        "approved_by": "phase-4-decompose",
-        "reason": "The true branch requires cstate(5)*0.1 > nstate, which requires humus nitrogen demand exceeding total SOM nitrogen. No standard simulation reaches this state.",
-        "stabilization_plan": "Add a synthetic fixture with cstate(5)=100, nstate=0.01 to exercise the unusual branch."
-      }
-    },
-    {
-      "id": "yasso.decompose.cue_clamp",
-      "file": "vendor/SVMC/src/yasso.f90",
-      "condition": "CUE = max(min(0.43*(nc_som/nc_mb)^0.6, 1.0), cue_min) — clamped to [0.1, 1.0]",
-      "else_behavior": "unclamped value used when in range",
       "fixture_both_sides": true,
       "jax_tested": true,
       "ts_tested": true,
-      "notes": "Cases 0-6 have nstate/totc = 0.05, giving CUE ≈ 0.285 (in range). Case 7 is skipped by totc threshold. The min/max clamp is exercised implicitly via jnp.clip / np.minimum+np.maximum."
+      "notes": "Case 8 explicitly triggers the unusual branch with cstate(5)=5.0 and nstate=0.4; the baseline cases keep nc_h = nc_h_max."
+    },
+    {
+      "id": "yasso.decompose.cue_upper_cap",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "0.43 * (nc_som / nc_mb) ** 0.6 > 1.0 -> cap raw CUE at 1.0",
+      "else_behavior": "leave raw CUE unchanged before the lower-floor check",
+      "fixture_both_sides": false,
+      "jax_tested": false,
+      "ts_tested": false,
+      "notes": "The baseline fixtures stay below the upper cap. Forcing the true arm makes cue = 1.0, so the upstream formula divides by zero in cupt_awen = (resp - decomp_h) / (1.0 - cue).",
+      "waiver": {
+        "scope": "fixture-both-sides",
+        "kind": "fatal-path",
+        "approved_by": "phase-4-decompose",
+        "reason": "The true arm feeds a zero denominator into the upstream nitrogen update, producing non-finite output rather than a stable numerical contract.",
+        "safe_test_strategy": "Keep the branch tagged and explicitly uncovered until the reference implementation defines a non-fatal behavior for cue = 1.0."
+      }
+    },
+    {
+      "id": "yasso.decompose.cue_lower_floor",
+      "file": "vendor/SVMC/src/yasso.f90",
+      "condition": "min(raw_cue, 1.0) < cue_min -> floor CUE at cue_min",
+      "else_behavior": "leave the capped CUE unchanged",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Case 9 explicitly drives nc_som low enough to hit the cue_min floor without triggering the unusual humus branch; baseline cases stay above the floor."
     }
   ],
   "summary": {
-    "total_branches": 27,
-    "both_sides_covered": 22,
+    "total_branches": 28,
+    "both_sides_covered": 23,
     "single_side_only": 5,
     "waived_uncovered": 5,
-    "coverage_pct": "81% (22/27)"
+    "coverage_pct": "82% (23/28)"
   }
 }

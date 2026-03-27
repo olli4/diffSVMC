@@ -127,7 +127,7 @@ PROGRAM harness
   real(8) :: m5c_init(5), m5c_b(5), m5c_xt(5)
 
   ! decompose test variables
-  integer, parameter :: NDECOMP = 8
+  integer, parameter :: NDECOMP = 10
   real(8) :: dec_param(35)
   real(8) :: dec_timestep_days
   real(8) :: dec_tempr_c(NDECOMP)
@@ -1358,9 +1358,9 @@ PROGRAM harness
 
   ! Test cases: varied temperature and precipitation
   dec_tempr_c = (/ 10.0d0, 20.0d0, 0.0d0, -10.0d0, 30.0d0, &
-                    10.0d0, 10.0d0, 10.0d0 /)
+                    10.0d0, 10.0d0, 10.0d0, 10.0d0, 10.0d0 /)
   dec_precip_day = (/ 2.0d0, 2.0d0, 2.0d0, 2.0d0, 2.0d0, &
-                      0.5d0, 5.0d0, 2.0d0 /)
+                      0.5d0, 5.0d0, 2.0d0, 2.0d0, 2.0d0 /)
 
   ! Carbon states for testing (5 AWENH pools)
   ! Cases 1-5: same C state, varied temp & precip
@@ -1375,10 +1375,16 @@ PROGRAM harness
   dec_cstate(:,7) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
   ! Case 8: near-zero carbon → triggers totc < 1e-6 branch (ntend=0)
   dec_cstate(:,8) = (/ 1.0d-7, 1.0d-7, 1.0d-7, 1.0d-7, 1.0d-7 /)
+  ! Case 9: unusual humus N:C branch only (cstate(5)*nc_h_max > nstate)
+  dec_cstate(:,9) = (/ 2.0d0, 1.5d0, 1.0d0, 0.5d0, 5.0d0 /)
+  ! Case 10: CUE lower floor only (nc_som low, humus small to avoid nc_h branch)
+  dec_cstate(:,10) = (/ 4.0d0, 3.0d0, 2.0d0, 1.0d0, 1.0d-2 /)
 
   ! Nitrogen state
   dec_nstate(1:7) = 0.5d0
   dec_nstate(8) = 1.0d-8  ! near-zero
+  dec_nstate(9) = 0.4d0   ! nc_h unusual, cue stays unclamped
+  dec_nstate(10) = 5.0d-3 ! cue lower floor, nc_h branch stays false
 
   do i = 1, NDECOMP
     call decompose(dec_param, dec_timestep_days, dec_tempr_c(i), &

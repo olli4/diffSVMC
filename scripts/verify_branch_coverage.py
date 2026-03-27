@@ -91,6 +91,7 @@ def compute_fixture_coverage() -> dict[str, bool]:
     aerodynamics_cases = list(water["aerodynamics"])
     penman_cases = list(water["penman_monteith"])
     smooth_cases = list(water["exponential_smooth_met"])
+    decompose_cases = list(yasso.get("decompose", []))
     has_pm_hypothesis = any(str(case["inputs"].get("hypothesis", "PM")) == "PM" for case in fn_profit_cases)
     has_non_pm_hypothesis = any(str(case["inputs"].get("hypothesis", "PM")) != "PM" for case in fn_profit_cases)
     has_do_optim_true = any(bool(case["inputs"].get("do_optim", False)) for case in fn_profit_cases)
@@ -219,6 +220,45 @@ def compute_fixture_coverage() -> dict[str, bool]:
         for c in cws_cases
     )
 
+    has_totc_threshold_true = False
+    has_totc_threshold_false = False
+    has_nc_h_unusual_true = False
+    has_nc_h_unusual_false = False
+    has_cue_upper_true = False
+    has_cue_upper_false = False
+    has_cue_lower_true = False
+    has_cue_lower_false = False
+    for case in decompose_cases:
+        inputs = case["inputs"]
+        cstate = [float(value) for value in inputs["cstate"]]
+        nstate = float(inputs["nstate"])
+        totc = sum(cstate)
+        h_pool = cstate[4]
+
+        if totc < 1e-6:
+            has_totc_threshold_true = True
+            continue
+        has_totc_threshold_false = True
+
+        if h_pool * 0.1 > nstate:
+            has_nc_h_unusual_true = True
+        else:
+            has_nc_h_unusual_false = True
+
+        nc_som = nstate / totc
+        raw_cue = 0.43 * (nc_som / 0.1) ** 0.6
+        capped_cue = min(raw_cue, 1.0)
+
+        if raw_cue > 1.0:
+            has_cue_upper_true = True
+        else:
+            has_cue_upper_false = True
+
+        if capped_cue < 0.1:
+            has_cue_lower_true = True
+        else:
+            has_cue_lower_false = True
+
     coverage = {
         "phydro.ftemp_kphio.c4_select": bool(c3_cases) and bool(c4_cases),
         "phydro.ftemp_kphio.negative_clamp": any(float(case["output"]) == 0.0 for case in kphio_cases)
@@ -249,6 +289,10 @@ def compute_fixture_coverage() -> dict[str, bool]:
         "water.canopy_water_snow.snow_unloading": has_unload_true and has_unload_false,
         "water.canopy_water_snow.interception_phase": has_interc_snow and has_interc_liquid,
         "water.canopy_water_snow.melt_freeze": has_melt and has_freeze and has_no_phase_change,
+        "yasso.decompose.totc_threshold": has_totc_threshold_true and has_totc_threshold_false,
+        "yasso.decompose.nc_h_unusual": has_nc_h_unusual_true and has_nc_h_unusual_false,
+        "yasso.decompose.cue_upper_cap": has_cue_upper_true and has_cue_upper_false,
+        "yasso.decompose.cue_lower_floor": has_cue_lower_true and has_cue_lower_false,
     }
     return coverage
 
