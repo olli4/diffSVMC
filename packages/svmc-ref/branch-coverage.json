@@ -199,13 +199,83 @@
       "jax_tested": true,
       "ts_tested": true,
       "notes": "Fixtures include both the initialization and smoothing paths."
+    },
+    {
+      "id": "water.ground_evaporation.snow_floor_zero",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "SWE > eps -> no evaporation from floor if snow on ground",
+      "else_behavior": "soil evaporation proceeds normally",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include SWE=0 (evaporation proceeds) and SWE>0 (evaporation zeroed) cases."
+    },
+    {
+      "id": "water.canopy_water_snow.precip_phase",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "T<=Tmin -> all snow; T>=Tmax -> all rain; between -> mixed",
+      "else_behavior": "one of the two other precipitation phase arms is taken",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include all three precipitation regimes: snow (T<=0), mixed (T=0.5), and rain (T>=1)."
+    },
+    {
+      "id": "water.canopy_water_snow.lai_evap_guard",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "LAI <= eps -> no canopy evaporation/sublimation",
+      "else_behavior": "compute evaporation/sublimation rates",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include LAI=0 (case 4, no evaporation) and LAI>=1.5 (cases 0-3,5, evaporation computed)."
+    },
+    {
+      "id": "water.canopy_water_snow.sublim_vs_evap",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "Prec==0 & T<=Tmin -> sublimation; Prec==0 & T>Tmin -> evaporation",
+      "else_behavior": "no evaporation when precipitation is occurring",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include sublimation (Pre=0,T<0), evaporation (Pre=0,T>0), and precipitation-suppressed no-evap (Pre>0) cases."
+    },
+    {
+      "id": "water.canopy_water_snow.snow_unloading",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "T >= Tmin -> unload excess canopy snow beyond wmax_tot",
+      "else_behavior": "no unloading when temperature is below Tmin",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include T>=0 (unloading active, cases 0,2,4,5) and T<0 (no unloading, cases 1,3)."
+    },
+    {
+      "id": "water.canopy_water_snow.interception_phase",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "T < Tmin -> snow interception capacity (wmaxsnow); else -> liquid capacity (wmax)",
+      "else_behavior": "liquid interception arm is taken",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include T<0 (snow interception, cases 1,3) and T>=0 (liquid interception, cases 0,2,4,5)."
+    },
+    {
+      "id": "water.canopy_water_snow.melt_freeze",
+      "file": "vendor/SVMC/src/water_mod.f90",
+      "condition": "T>=Tmelt -> melt ice; T<Tmelt & swe_l>0 -> freeze liquid; else -> no phase change",
+      "else_behavior": "no-change arm when T<Tmelt and no liquid snow exists",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": true,
+      "notes": "Fixtures include melt (T=0.5 with existing ice), freeze (T<0 with swe_l>0), and no-change (T<0 with swe_l=0) cases."
     }
   ],
   "summary": {
-    "total_branches": 17,
-    "both_sides_covered": 13,
+    "total_branches": 24,
+    "both_sides_covered": 20,
     "single_side_only": 4,
     "waived_uncovered": 4,
-    "coverage_pct": "76% (13/17)"
+    "coverage_pct": "83% (20/24)"
   }
 }

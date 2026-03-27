@@ -2549,6 +2549,78 @@
         "Freeze": 0.0,
         "mbe": 0.0
       }
+    },
+    {
+      "inputs": {
+        "T": 0.5,
+        "Pre": 0.00015,
+        "AE": 90.0,
+        "D": 450.0,
+        "Ra": 34.49723516286791,
+        "U": 2.2,
+        "LAI": 2.5,
+        "P": 101325.0,
+        "CanopyStorage_in": 0.1,
+        "SWE_in": 3.0,
+        "swe_i_in": 2.8,
+        "swe_l_in": 0.2,
+        "wmax": 0.5,
+        "wmaxsnow": 4.0,
+        "kmelt": 2.31e-08,
+        "kfreeze": 5.79e-09,
+        "frac_snowliq": 0.05,
+        "time_step": 1.0
+      },
+      "output": {
+        "CanopyStorage": 0.5034092168120804,
+        "SWE": 3.011666502173658,
+        "swe_i": 2.86825381159396,
+        "swe_l": 0.143412690579698,
+        "Throughfall": 0.1365907831879195,
+        "Interception": 0.4034092168120804,
+        "CanopyEvap": 0.0,
+        "Unloading": 0.0,
+        "PotInfiltration": 0.1249242810142618,
+        "Melt": 4.158e-05,
+        "Freeze": 0.0,
+        "mbe": -2.220446049250313e-16
+      }
+    },
+    {
+      "inputs": {
+        "T": -1.5,
+        "Pre": 0.0,
+        "AE": 22.75,
+        "D": 250.0,
+        "Ra": 60.93207830942282,
+        "U": 1.8,
+        "LAI": 1.2,
+        "P": 95000.0,
+        "CanopyStorage_in": 0.3,
+        "SWE_in": 3.0,
+        "swe_i_in": 3.0,
+        "swe_l_in": 0.0,
+        "wmax": 0.5,
+        "wmaxsnow": 4.0,
+        "kmelt": 2.31e-08,
+        "kfreeze": 5.79e-09,
+        "frac_snowliq": 0.05,
+        "time_step": 1.0
+      },
+      "output": {
+        "CanopyStorage": 0.2688658084383615,
+        "SWE": 3.0,
+        "swe_i": 3.0,
+        "swe_l": 0.0,
+        "Throughfall": 0.0,
+        "Interception": 0.0,
+        "CanopyEvap": 0.0311341915616385,
+        "Unloading": 0.0,
+        "PotInfiltration": 0.0,
+        "Melt": 0.0,
+        "Freeze": 0.0,
+        "mbe": 1.769417945496343e-16
+      }
     }
   ],
   "ground_evaporation": [
@@ -2652,6 +2724,40 @@
       },
       "output": {
         "SoilEvap": 0.03705322437665085
+      }
+    },
+    {
+      "inputs": {
+        "T": 0.5,
+        "AE": 30.0,
+        "VPD": 450.0,
+        "Ras": 306.4728381501624,
+        "P": 101325.0,
+        "SWE": 3.0,
+        "beta": 0.75,
+        "WatSto": 110.0,
+        "gsoil": 0.01,
+        "time_step": 1.0
+      },
+      "output": {
+        "SoilEvap": 0.0
+      }
+    },
+    {
+      "inputs": {
+        "T": -1.5,
+        "AE": 12.25,
+        "VPD": 250.0,
+        "Ras": 199.8298979014356,
+        "P": 95000.0,
+        "SWE": 3.0,
+        "beta": 0.65,
+        "WatSto": 90.0,
+        "gsoil": 0.01,
+        "time_step": 1.0
+      },
+      "output": {
+        "SoilEvap": 0.0
       }
     }
   ],
@@ -2936,6 +3042,100 @@
         "Melt": 0.0,
         "Freeze": 0.0,
         "mbe": 0.0
+      }
+    },
+    {
+      "inputs": {
+        "Rn": 120.0,
+        "Ta": 0.5,
+        "Prec": 0.00015,
+        "VPD": 450.0,
+        "U": 2.2,
+        "P": 101325.0,
+        "fapar": 0.75,
+        "LAI": 2.5,
+        "CanopyStorage_in": 0.1,
+        "SWE_in": 3.0,
+        "swe_i_in": 2.8,
+        "swe_l_in": 0.2,
+        "WatSto_in": 110.0,
+        "beta_in": 0.75,
+        "hc": 15.0,
+        "zmeas": 2.0,
+        "zground": 0.5,
+        "zo_ground": 0.01,
+        "w_leaf": 0.02,
+        "wmax": 0.5,
+        "wmaxsnow": 4.0,
+        "gsoil": 0.01,
+        "kmelt": 2.31e-08,
+        "kfreeze": 5.79e-09,
+        "frac_snowliq": 0.05,
+        "time_step": 1.0
+      },
+      "output": {
+        "CanopyStorage": 0.5034092168120804,
+        "SWE": 3.011666502173658,
+        "swe_i": 2.86825381159396,
+        "swe_l": 0.143412690579698,
+        "Throughfall": 0.1365907831879195,
+        "Interception": 0.4034092168120804,
+        "CanopyEvap": 0.0,
+        "Unloading": 0.0,
+        "SoilEvap": 0.0,
+        "ET": 0.0,
+        "Transpiration": 0.0,
+        "PotInfiltration": 0.1249242810142618,
+        "Melt": 4.158e-05,
+        "Freeze": 0.0,
+        "mbe": -2.220446049250313e-16
+      }
+    },
+    {
+      "inputs": {
+        "Rn": 35.0,
+        "Ta": -1.5,
+        "Prec": 0.0,
+        "VPD": 250.0,
+        "U": 1.8,
+        "P": 95000.0,
+        "fapar": 0.65,
+        "LAI": 1.2,
+        "CanopyStorage_in": 0.3,
+        "SWE_in": 3.0,
+        "swe_i_in": 3.0,
+        "swe_l_in": 0.0,
+        "WatSto_in": 90.0,
+        "beta_in": 0.65,
+        "hc": 15.0,
+        "zmeas": 2.0,
+        "zground": 0.5,
+        "zo_ground": 0.01,
+        "w_leaf": 0.02,
+        "wmax": 0.5,
+        "wmaxsnow": 4.0,
+        "gsoil": 0.01,
+        "kmelt": 2.31e-08,
+        "kfreeze": 5.79e-09,
+        "frac_snowliq": 0.05,
+        "time_step": 1.0
+      },
+      "output": {
+        "CanopyStorage": 0.2688658084383615,
+        "SWE": 3.0,
+        "swe_i": 3.0,
+        "swe_l": 0.0,
+        "Throughfall": 0.0,
+        "Interception": 0.0,
+        "CanopyEvap": 0.0311341915616385,
+        "Unloading": 0.0,
+        "SoilEvap": 0.0,
+        "ET": 0.0,
+        "Transpiration": 0.0,
+        "PotInfiltration": 0.0,
+        "Melt": 0.0,
+        "Freeze": 0.0,
+        "mbe": 1.769417945496343e-16
       }
     }
   ],

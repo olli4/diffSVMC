@@ -88,7 +88,7 @@ PROGRAM harness
   type(spafhy_para_type)        :: cwf_para  ! canopy water flux parameters
 
   ! Phase 3 test-case dimensions
-  integer, parameter :: NCWF = 6   ! canopy_water_flux test cases
+  integer, parameter :: NCWF = 8   ! canopy_water_flux test cases
   real(8) :: cwf_Rn(NCWF), cwf_Ta(NCWF), cwf_Prec(NCWF)
   real(8) :: cwf_VPD(NCWF), cwf_U(NCWF), cwf_P(NCWF)
   real(8) :: cwf_fapar(NCWF), cwf_LAI(NCWF)
@@ -200,27 +200,28 @@ PROGRAM harness
   cwf_para%max_poros   = soil_params%max_poros
   cwf_para%maxpond     = 10.0d0    ! max pond storage, mm
 
-  ! canopy_water_flux test cases (6 scenarios):
-  !   1: warm rain, dry canopy         2: cold snow, existing canopy storage
-  !   3: no precip, wet canopy (evap)  4: freezing, existing snowpack
-  !   5: mild, LAI=0 (bare ground)     6: high precip, saturated canopy
+  ! canopy_water_flux test cases (8 scenarios):
+  !   1: warm rain, dry canopy          2: cold snow, existing canopy storage
+  !   3: no precip, wet canopy (evap)   4: freezing, existing snowpack
+  !   5: mild, LAI=0 (bare ground)      6: high precip, saturated canopy
+  !   7: mixed precip, warm snowmelt    8: cold snowpack, no phase change
   !       Rn(W/m2)  Ta(C)    Prec(mm/s) VPD(Pa) U(m/s) P(Pa)     fapar  LAI
-  cwf_Rn    = (/ 200.0d0,  50.0d0,  150.0d0,  10.0d0,   200.0d0, 300.0d0  /)
-  cwf_Ta    = (/  15.0d0,  -5.0d0,   20.0d0,  -2.0d0,    10.0d0,  18.0d0  /)
-  cwf_Prec  = (/   1.4d-4,  2.8d-4,   0.0d0,   0.0d0,    5.6d-4,  8.3d-4  /)
-  cwf_VPD   = (/ 800.0d0, 200.0d0, 1200.0d0, 300.0d0,   600.0d0, 500.0d0  /)
-  cwf_U     = (/   2.0d0,   3.0d0,    1.5d0,   4.0d0,     2.5d0,   2.0d0  /)
-  cwf_P     = (/ 101325.0d0, 101325.0d0, 101325.0d0, 80000.0d0, 101325.0d0, 101325.0d0 /)
-  cwf_fapar = (/   0.8d0,   0.7d0,    0.9d0,   0.6d0,     0.0d0,   0.85d0  /)
-  cwf_LAI   = (/   3.0d0,   2.0d0,    4.0d0,   1.5d0,     0.0d0,   5.0d0  /)
+  cwf_Rn    = (/ 200.0d0,  50.0d0,  150.0d0,  10.0d0, 200.0d0, 300.0d0, 120.0d0,  35.0d0 /)
+  cwf_Ta    = (/  15.0d0,  -5.0d0,   20.0d0,  -2.0d0,  10.0d0,  18.0d0,   0.5d0,  -1.5d0 /)
+  cwf_Prec  = (/ 1.4d-4,  2.8d-4,   0.0d0,   0.0d0, 5.6d-4, 8.3d-4, 1.5d-4,   0.0d0 /)
+  cwf_VPD   = (/ 800.0d0, 200.0d0, 1200.0d0, 300.0d0, 600.0d0, 500.0d0, 450.0d0, 250.0d0 /)
+  cwf_U     = (/   2.0d0,   3.0d0,    1.5d0,   4.0d0,   2.5d0,   2.0d0,   2.2d0,   1.8d0 /)
+  cwf_P     = (/ 101325.0d0, 101325.0d0, 101325.0d0, 80000.0d0, 101325.0d0, 101325.0d0, 101325.0d0, 95000.0d0 /)
+  cwf_fapar = (/   0.8d0,   0.7d0,    0.9d0,   0.6d0,   0.0d0,   0.85d0,   0.75d0,   0.65d0 /)
+  cwf_LAI   = (/   3.0d0,   2.0d0,    4.0d0,   1.5d0,   0.0d0,   5.0d0,    2.5d0,   1.2d0 /)
   ! Initial canopy state
-  cwf_CanSto0 = (/  0.0d0,  0.5d0,   1.2d0,   0.0d0,     0.0d0,   2.0d0  /)
-  cwf_SWE0    = (/  0.0d0,  5.0d0,   0.0d0,  10.0d0,     0.0d0,   0.0d0  /)
-  cwf_swe_i0  = (/  0.0d0,  4.5d0,   0.0d0,   9.0d0,     0.0d0,   0.0d0  /)
-  cwf_swe_l0  = (/  0.0d0,  0.5d0,   0.0d0,   1.0d0,     0.0d0,   0.0d0  /)
+  cwf_CanSto0 = (/  0.0d0,  0.5d0,   1.2d0,   0.0d0,   0.0d0,   2.0d0,   0.1d0,   0.3d0 /)
+  cwf_SWE0    = (/  0.0d0,  5.0d0,   0.0d0,  10.0d0,   0.0d0,   0.0d0,   3.0d0,   3.0d0 /)
+  cwf_swe_i0  = (/  0.0d0,  4.5d0,   0.0d0,   9.0d0,   0.0d0,   0.0d0,   2.8d0,   3.0d0 /)
+  cwf_swe_l0  = (/  0.0d0,  0.5d0,   0.0d0,   1.0d0,   0.0d0,   0.0d0,   0.2d0,   0.0d0 /)
   ! Initial soil state
-  cwf_WatSto0 = (/ 100.0d0, 80.0d0, 150.0d0, 200.0d0,   120.0d0, 100.0d0  /)
-  cwf_beta0   = (/   0.8d0,  0.6d0,   1.0d0,   0.9d0,     0.7d0,   0.8d0  /)
+  cwf_WatSto0 = (/ 100.0d0, 80.0d0, 150.0d0, 200.0d0, 120.0d0, 100.0d0, 110.0d0,  90.0d0 /)
+  cwf_beta0   = (/   0.8d0,  0.6d0,   1.0d0,   0.9d0,   0.7d0,   0.8d0,   0.75d0,  0.65d0 /)
 
   ! soil_water test cases (5 scenarios):
   !   1: normal infiltration   2: excess water → ponding

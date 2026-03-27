@@ -170,6 +170,55 @@ def compute_fixture_coverage() -> dict[str, bool]:
     has_init_true = any(int(case["inputs"]["met_ind_in"]) == 1 for case in smooth_cases)
     has_init_false = any(int(case["inputs"]["met_ind_in"]) != 1 for case in smooth_cases)
 
+    # --- Phase 3: ground_evaporation ---
+    ground_evap_cases = list(water["ground_evaporation"])
+    eps = 1e-16
+    has_snow_floor_true = any(float(c["inputs"]["SWE"]) > eps for c in ground_evap_cases)
+    has_snow_floor_false = any(float(c["inputs"]["SWE"]) <= eps for c in ground_evap_cases)
+
+    # --- Phase 3: canopy_water_snow ---
+    cws_cases = list(water["canopy_water_snow"])
+    tmin = 0.0
+    tmax = 1.0
+    tmelt = 0.0
+
+    has_precip_snow = any(float(c["inputs"]["T"]) <= tmin for c in cws_cases)
+    has_precip_rain = any(float(c["inputs"]["T"]) >= tmax for c in cws_cases)
+
+    has_lai_guard_true = any(float(c["inputs"]["LAI"]) > eps for c in cws_cases)
+    has_lai_guard_false = any(float(c["inputs"]["LAI"]) <= eps for c in cws_cases)
+
+    has_precip_mixed = any(tmin < float(c["inputs"]["T"]) < tmax for c in cws_cases)
+
+    has_sublim = any(
+        float(c["inputs"]["Pre"]) == 0.0 and float(c["inputs"]["T"]) <= tmin and float(c["inputs"]["LAI"]) > eps
+        for c in cws_cases
+    )
+    has_evap = any(
+        float(c["inputs"]["Pre"]) == 0.0 and float(c["inputs"]["T"]) > tmin and float(c["inputs"]["LAI"]) > eps
+        for c in cws_cases
+    )
+    has_no_evap = any(
+        float(c["inputs"]["Pre"]) > 0.0 and float(c["inputs"]["LAI"]) > eps
+        for c in cws_cases
+    )
+
+    has_unload_true = any(float(c["inputs"]["T"]) >= tmin for c in cws_cases)
+    has_unload_false = any(float(c["inputs"]["T"]) < tmin for c in cws_cases)
+
+    has_interc_snow = any(float(c["inputs"]["T"]) < tmin for c in cws_cases)
+    has_interc_liquid = any(float(c["inputs"]["T"]) >= tmin for c in cws_cases)
+
+    has_melt = any(float(c["inputs"]["T"]) >= tmelt for c in cws_cases)
+    has_freeze = any(
+        float(c["inputs"]["T"]) < tmelt and float(c["inputs"]["swe_l_in"]) > 0.0
+        for c in cws_cases
+    )
+    has_no_phase_change = any(
+        float(c["inputs"]["T"]) < tmelt and float(c["inputs"]["swe_l_in"]) <= 0.0
+        for c in cws_cases
+    )
+
     coverage = {
         "phydro.ftemp_kphio.c4_select": bool(c3_cases) and bool(c4_cases),
         "phydro.ftemp_kphio.negative_clamp": any(float(case["output"]) == 0.0 for case in kphio_cases)
@@ -193,6 +242,13 @@ def compute_fixture_coverage() -> dict[str, bool]:
         "water.penman_monteith.le_floor": has_penman_floor_true and has_penman_floor_false,
         "yasso.exponential_smooth_met.invalid_ind_guard": has_invalid_ind_true and has_invalid_ind_false,
         "yasso.exponential_smooth_met.init_vs_smooth": has_init_true and has_init_false,
+        "water.ground_evaporation.snow_floor_zero": has_snow_floor_true and has_snow_floor_false,
+        "water.canopy_water_snow.precip_phase": has_precip_snow and has_precip_rain and has_precip_mixed,
+        "water.canopy_water_snow.lai_evap_guard": has_lai_guard_true and has_lai_guard_false,
+        "water.canopy_water_snow.sublim_vs_evap": has_sublim and has_evap and has_no_evap,
+        "water.canopy_water_snow.snow_unloading": has_unload_true and has_unload_false,
+        "water.canopy_water_snow.interception_phase": has_interc_snow and has_interc_liquid,
+        "water.canopy_water_snow.melt_freeze": has_melt and has_freeze and has_no_phase_change,
     }
     return coverage
 
