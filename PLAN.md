@@ -7,14 +7,16 @@ This document outlines the phased, bottom-up plan for porting the SVMC process m
 To prevent technical debt and ensure a rigorous port, every function/submodel must meet these criteria before moving to the next:
 
 1. **Fortran Reference Covered**: Logging captures baseline examples _and_ explicitly forces both single and combined branch-triggering conditions. For wrapper submodels, cross-level wrapper traces must be logged to validate composition (e.g., argument order, units). Any `PORT-BRANCH` added in vendor/harness/ports must be registered in `branch-coverage.json` and evaluated by `verify_branch_coverage.py` before the phase can close.
+  Coverage claims must be branch-arm-specific: multi-arm conditionals are not considered covered unless fixtures exercise each materially distinct arm and the evaluator distinguishes them.
 2. **Fixture & State Contract Established**: Reference JSON fixtures form a strict state-shape and interface contract across packages. Schema changes require simultaneous regeneration and alignment across `svmc-ref`, `svmc-jax`, and `svmc-js`.
 3. **Invariant Validation**: JAX tests must include physical/metamorphic invariant checks (e.g., monotonicity, mass conservation) to expose plausible bugs that static fixture playback misses. TS-side invariant tests are recommended but not gating; the JAX invariants are the primary validation layer since they run at float64 and have autodiff access.
 4. **Numerically Faithful & Differentiable**: JAX implementation matches Fortran mathematically and handles non-smooth operations via autodiff-friendly constructs (`jax.lax.cond`, soft-clamps).
 5. **Gradients & OOD Validated**: Verify that `jax.grad` produces finite, stable gradients across both the baseline fixture input range **and** Out-of-Distribution (OOD) adversarial bounds to ensure L-BFGS inversion won't crash on unphysical edge cases.
-6. **Browser Port Verified & Memory Safe**: The `@hamk-uas/jax-js-nonconsuming` port passes fixture validation against the same reference data as JAX. If a JAX construct does not map cleanly, implement and document a fallback. Every TS test must pass under `checkLeaks` (zero leaked arrays). All TS source must pass the jax-js ESLint plugin (`recommended` config; upgrade to `strict` once existing chain issues are resolved).
+6. **Browser Port Verified & Memory Safe**: The `@hamk-uas/jax-js-nonconsuming` port passes fixture validation against the same reference data as JAX. If a JAX construct does not map cleanly, implement and document a fallback. Every TS test must pass under `checkLeaks` (zero leaked arrays). All TS source must pass the jax-js ESLint plugin (`recommended` config; upgrade to `strict` once existing chain issues are resolved). Tolerances must be justified from numeric limits and algorithm structure: derive them from machine epsilon and critical-path operation depth, measure observed errors against fixtures, and use `atol` only for true near-zero noise floors. Do not introduce broad fixed tolerances just to clear tests.
 7. **Temporal Rollout Vetted** _(Phases 3-5 only)_: Stateful submodels must pass a 100+ step sequential rollout fixture in default TS `float32` mode to prove accumulation errors do not diverge fatally from JAX/Fortran `float64` baselines. When TS `float64` mode is available, use it as the tighter browser-side parity reference.
-8. **Phase-Exit Gate**: A submodel's phase is complete only when all criteria pass in CI (`branch:audit` + pytest + vitest). Do not begin the next phase until the gate is green.
-9. **No Silent Shortcuts**: If any criterion above is partially met or intentionally deferred, document the gap explicitly in the phase status below with a rationale. Do not mark a criterion as complete when coverage is incomplete.
+8. **Reference Provenance Verified**: If fixture comparisons expose suspicious behavior, prove whether it comes from upstream SVMC, harness instrumentation, or the port itself before encoding the behavior as expected. Upstream artifacts or dead code must be documented with source references and, when appropriate, an issue draft in `issues/`.
+9. **Phase-Exit Gate**: A submodel's phase is complete only when all criteria pass in CI (`branch:audit` + pytest + vitest). Do not begin the next phase until the gate is green.
+10. **No Silent Shortcuts**: If any criterion above is partially met or intentionally deferred, document the gap explicitly in the phase status below with a rationale. Do not mark a criterion as complete when coverage is incomplete, evaluator logic is looser than the actual branch guard, or tolerances are still provisional.
 
 ## Phase 0: Project Foundation & Initial Porting (Completed)
 
@@ -112,6 +114,13 @@ Move to canopy/soil hydrology processes which manage the local water states.
 
 Port the long-term, daily/yearly loop processes.
 
+Quality bar carried over from Phase 3:
+
+- Add explicit branch-trigger fixtures for each biologically distinct allocation and decomposition regime instead of relying on seasonal baseline runs alone.
+- Treat long-horizon state rollouts as first-class validation artifacts: compare not only endpoint state but intermediate pool trajectories and conservation residuals.
+- If Yasso or allocation reference behavior appears inconsistent, verify provenance against upstream SVMC before preserving it in fixtures or tolerances.
+- Any TS tolerance for long-horizon rollouts must be backed by measured drift and epsilon-scaled accumulation analysis, not a blanket per-phase relaxation.
+
 - **Fortran Build Modernization (`fpm`/`CMake`)**: At this point, integrating the 20+ Yasso and Allocation sub-modules inside the Fortran harness will break the manual `Makefile` dependency ordering. Before writing Yasso harness logs, scrap the `Makefile` and adopt `fpm` (Fortran Package Manager) or `CMake` for reliable automated dependency parsing. Doing this early in Phase 4 defers scope creep but prevents a bottleneck precisely when the Fortran inclusion graph becomes intractable.
 - Allocation modules: `invert_alloc` and `alloc_hypothesis_2`.
 - Yasso20 Soil Carbon:
@@ -123,6 +132,12 @@ Port the long-term, daily/yearly loop processes.
 ## Phase 5: Main SVMC Integration Loop
 
 Combine the differentiable submodels into the top-level time-step loops.
+
+Quality bar carried over from Phase 3:
+
+- Preserve branch-audit discipline at integration level: when a wrapper introduces new conditional behavior, add `PORT-BRANCH` tags and evaluator logic that matches the real guard conditions exactly.
+- Validate coupled rollouts with multi-step fixtures that force regime switches, not just steady-state weather segments.
+- Keep known upstream accounting artifacts separate from true port regressions so integration tests do not normalize new bugs.
 
 - **I/O Boundary Rule**: Keep namelist parsing and netCDF reading in a thin adapter layer separate from the computational core. Submodel functions must accept plain arrays/scalars so they remain testable and composable outside the original SVMC file conventions.
 - Wire up initializers via the adapter layer: Reading namelists (Configs) and starting `initialization_spafhy` & `wrapper_yasso_initialize_totc`.
