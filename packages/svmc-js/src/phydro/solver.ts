@@ -1,4 +1,5 @@
-import { clearCaches, jit, lax, numpy as np, tree, valueAndGrad } from "@hamk-uas/jax-js-nonconsuming";
+import { clearCaches, jit, lax, tree, valueAndGrad } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import {
   adam,
   applyUpdates,

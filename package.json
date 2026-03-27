@@ -5,6 +5,9 @@
   "scripts": {
     "branch:audit": "python3 scripts/verify_branch_coverage.py",
     "test": "vitest run",
+    "test:js:float32": "SVMC_JS_DTYPE=float32 vitest run",
+    "test:js:float64": "SVMC_JS_DTYPE=float64 vitest run",
+    "test:js:precision-modes": "pnpm test:js:float32 && pnpm test:js:float64",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",

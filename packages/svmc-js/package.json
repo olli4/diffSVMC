@@ -7,6 +7,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
+    "test:float32": "SVMC_JS_DTYPE=float32 vitest run",
+    "test:float64": "SVMC_JS_DTYPE=float64 vitest run",
     "test:watch": "vitest",
     "check": "tsc --noEmit"
   },

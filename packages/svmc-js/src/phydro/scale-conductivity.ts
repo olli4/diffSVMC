@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 
 /** Environmental parameters for P-Hydro calculations. */
 export interface ParEnv {

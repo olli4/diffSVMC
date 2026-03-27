@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import waterConstants from "../../../svmc-ref/constants/water.json";
 
 /**

@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import yassoConstants from "../../../svmc-ref/constants/yasso.json";
 
 // AWENH fractions — canonical source: packages/svmc-ref/constants/yasso.json

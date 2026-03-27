@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 
 /**
  * Solve quadratic equation a·x² + b·x + c = 0 for root r1.

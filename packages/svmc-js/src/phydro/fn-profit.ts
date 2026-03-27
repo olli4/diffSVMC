@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import { calcGs } from "./calc-gs.js";
 import { calcAssimLightLimited } from "./calc-assim-light-limited.js";
 import type {

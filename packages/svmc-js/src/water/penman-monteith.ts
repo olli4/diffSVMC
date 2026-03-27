@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 
 /**
  * Saturation vapor pressure, slope, and psychrometric constant.

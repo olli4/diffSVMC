@@ -2,9 +2,9 @@ import {
   checkLeaks,
   devices,
   getBackend,
-  numpy as np,
 } from "@hamk-uas/jax-js-nonconsuming";
 import { afterAll, afterEach, beforeEach, expect } from "vitest";
+import { np } from "../src/precision.js";
 
 beforeEach(() => {
   checkLeaks.start();

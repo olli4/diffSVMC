@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 
 /** SpaFHy canopy/aerodynamic parameters. */
 export interface SpafhyAeroParams {

@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import { scaleConduct, type ParPlant, type ParEnv } from "./scale-conductivity.js";
 
 /**

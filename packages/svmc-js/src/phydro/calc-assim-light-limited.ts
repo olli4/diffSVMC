@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import type { ParPhotosynth } from "./scale-conductivity.js";
 
 /**

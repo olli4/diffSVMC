@@ -4,7 +4,7 @@
  * Port of canopy_water_snow, ground_evaporation, canopy_water_flux, and
  * soil_water from water_mod.f90 in the Fortran SVMC model.
  */
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 import { penmanMonteith } from "./penman-monteith.js";
 import { aerodynamics } from "./aerodynamics.js";
 import type { SpafhyAeroParams } from "./aerodynamics.js";
@@ -365,11 +365,11 @@ export function canopyWaterFlux(
   // Aerodynamic resistances
   const aero = aerodynamics(lai, u, aeroParams);
   using ra = aero.ra;
-  using _rb = aero.rb;
   using ras = aero.ras;
-  using _ustar = aero.ustar;
-  using _Uh = aero.Uh;
-  using _Ug = aero.Ug;
+  aero.rb.dispose();
+  aero.ustar.dispose();
+  aero.Uh.dispose();
+  aero.Ug.dispose();
 
   // Canopy interception & snowpack
   using aeCanopy = rn.mul(fapar);

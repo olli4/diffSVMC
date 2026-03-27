@@ -1,4 +1,4 @@
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../precision.js";
 
 /**
  * Density of water (kg/m³) as a function of temperature and pressure.
