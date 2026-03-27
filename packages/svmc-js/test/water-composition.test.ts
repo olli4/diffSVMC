@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { numpy as baseNp } from "@hamk-uas/jax-js-nonconsuming";
+import { getNumericDType, np } from "../src/precision.js";
 import {
   groundEvaporation,
   canopyWaterSnow,
@@ -15,9 +16,28 @@ import type { SoilHydroParams } from "../src/water/soil-hydraulics.js";
 import type { SpafhyAeroParams } from "../src/water/aerodynamics.js";
 import waterFixtures from "../../svmc-ref/fixtures/water.json";
 
-// Composition-function tolerances (float32)
-const RTOL_FLUX = 5e-3;
-const RTOL_STATE = 5e-3;
+// Machine epsilon for the configured numeric dtype.
+const eps = baseNp.finfo(getNumericDType()).eps;
+
+// Per-function tolerances derived from critical-path operation depth with ≥2× safety.
+// Observed maxima (float32 vs Fortran float64) are stated in parentheses.
+//
+// ground_evaporation:  ~14-op path (PM nested); observed max_rel < 1 eps
+// canopy_water_snow:   ~14-op path, ~90 total ops; observed max_rel < 1 eps
+//                      (except mbe near zero — use atol for that)
+// canopy_water_flux:   ~20-op path (aero + CWS + GE nested); similar profile to CWS
+// soil_water:          ~17-op path (soil_retention nested); Kh conditioning-limited
+const RTOL_GE = 32 * eps;
+const RTOL_CWS = 32 * eps;
+const RTOL_CWF = 64 * eps;
+const RTOL_SW = 64 * eps;
+// Mass-balance error (mbe) sums ~12 O(1)-magnitude terms; noise floor ≈ 12 * eps
+// per term.  128 * eps provides a 10× safety factor over the worst observed case.
+const ATOL_MBE = 128 * eps;
+// Kh uses the Mualem formula which is ill-conditioned near saturation boundaries
+// (see soil_hydraulic_conductivity leaf-test comments).  atol = eps provides a
+// float32 noise floor; RTOL_SW covers the well-conditioned regime.
+const ATOL_KH = eps;
 
 describe("Water composition functions — Fortran reference", () => {
   // ── ground_evaporation ───────────────────────────────────────────
@@ -37,7 +57,7 @@ describe("Water composition functions — Fortran reference", () => {
       using timeStep = np.array(inp.time_step);
 
       using result = groundEvaporation(tc, ae, vpd, ras, patm, swe, beta, watSto, gsoil, timeStep);
-      expect(result).toBeAllclose(exp.SoilEvap, { rtol: RTOL_FLUX, atol: 1e-10 });
+      expect(result).toBeAllclose(exp.SoilEvap, { rtol: RTOL_GE, atol: eps });
     });
   }
 
@@ -76,20 +96,20 @@ describe("Water composition functions — Fortran reference", () => {
 
       try {
         // State checks
-        expect(newState.CanopyStorage).toBeAllclose(exp.CanopyStorage, { rtol: RTOL_STATE });
-        expect(newState.SWE).toBeAllclose(exp.SWE, { rtol: RTOL_STATE, atol: 1e-10 });
-        expect(newState.swe_i).toBeAllclose(exp.swe_i, { rtol: RTOL_STATE, atol: 1e-10 });
-        expect(newState.swe_l).toBeAllclose(exp.swe_l, { rtol: RTOL_STATE, atol: 1e-10 });
+        expect(newState.CanopyStorage).toBeAllclose(exp.CanopyStorage, { rtol: RTOL_CWS });
+        expect(newState.SWE).toBeAllclose(exp.SWE, { rtol: RTOL_CWS, atol: eps });
+        expect(newState.swe_i).toBeAllclose(exp.swe_i, { rtol: RTOL_CWS, atol: eps });
+        expect(newState.swe_l).toBeAllclose(exp.swe_l, { rtol: RTOL_CWS, atol: eps });
 
         // Flux checks
-        expect(flux.Throughfall).toBeAllclose(exp.Throughfall, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Interception).toBeAllclose(exp.Interception, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.CanopyEvap).toBeAllclose(exp.CanopyEvap, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Unloading).toBeAllclose(exp.Unloading, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.PotInfiltration).toBeAllclose(exp.PotInfiltration, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Melt).toBeAllclose(exp.Melt, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Freeze).toBeAllclose(exp.Freeze, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.mbe).toBeAllclose(exp.mbe, { rtol: RTOL_FLUX, atol: 1e-6 });
+        expect(flux.Throughfall).toBeAllclose(exp.Throughfall, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.Interception).toBeAllclose(exp.Interception, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.CanopyEvap).toBeAllclose(exp.CanopyEvap, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.Unloading).toBeAllclose(exp.Unloading, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.PotInfiltration).toBeAllclose(exp.PotInfiltration, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.Melt).toBeAllclose(exp.Melt, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.Freeze).toBeAllclose(exp.Freeze, { rtol: RTOL_CWS, atol: eps });
+        expect(flux.mbe).toBeAllclose(exp.mbe, { rtol: RTOL_CWS, atol: ATOL_MBE });
       } finally {
         // Dispose state/flux/params (always, even on assertion failure)
         newState.CanopyStorage.dispose(); newState.SWE.dispose();
@@ -152,21 +172,21 @@ describe("Water composition functions — Fortran reference", () => {
 
       try {
         // State checks
-        expect(newState.CanopyStorage).toBeAllclose(exp.CanopyStorage, { rtol: RTOL_STATE });
-        expect(newState.SWE).toBeAllclose(exp.SWE, { rtol: RTOL_STATE, atol: 1e-10 });
-        expect(newState.swe_i).toBeAllclose(exp.swe_i, { rtol: RTOL_STATE, atol: 1e-10 });
-        expect(newState.swe_l).toBeAllclose(exp.swe_l, { rtol: RTOL_STATE, atol: 1e-10 });
+        expect(newState.CanopyStorage).toBeAllclose(exp.CanopyStorage, { rtol: RTOL_CWF });
+        expect(newState.SWE).toBeAllclose(exp.SWE, { rtol: RTOL_CWF, atol: eps });
+        expect(newState.swe_i).toBeAllclose(exp.swe_i, { rtol: RTOL_CWF, atol: eps });
+        expect(newState.swe_l).toBeAllclose(exp.swe_l, { rtol: RTOL_CWF, atol: eps });
 
         // Flux checks
-        expect(flux.Throughfall).toBeAllclose(exp.Throughfall, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Interception).toBeAllclose(exp.Interception, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.CanopyEvap).toBeAllclose(exp.CanopyEvap, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Unloading).toBeAllclose(exp.Unloading, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.SoilEvap).toBeAllclose(exp.SoilEvap, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.PotInfiltration).toBeAllclose(exp.PotInfiltration, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Melt).toBeAllclose(exp.Melt, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.Freeze).toBeAllclose(exp.Freeze, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(flux.mbe).toBeAllclose(exp.mbe, { rtol: RTOL_FLUX, atol: 1e-6 });
+        expect(flux.Throughfall).toBeAllclose(exp.Throughfall, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.Interception).toBeAllclose(exp.Interception, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.CanopyEvap).toBeAllclose(exp.CanopyEvap, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.Unloading).toBeAllclose(exp.Unloading, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.SoilEvap).toBeAllclose(exp.SoilEvap, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.PotInfiltration).toBeAllclose(exp.PotInfiltration, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.Melt).toBeAllclose(exp.Melt, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.Freeze).toBeAllclose(exp.Freeze, { rtol: RTOL_CWF, atol: eps });
+        expect(flux.mbe).toBeAllclose(exp.mbe, { rtol: RTOL_CWF, atol: ATOL_MBE });
       } finally {
         // Dispose (always, even on assertion failure)
         newState.CanopyStorage.dispose(); newState.SWE.dispose();
@@ -225,26 +245,26 @@ describe("Water composition functions — Fortran reference", () => {
 
       try {
         // State checks
-        expect(result.state.WatSto).toBeAllclose(exp.WatSto, { rtol: RTOL_STATE });
-        expect(result.state.PondSto).toBeAllclose(exp.PondSto, { rtol: RTOL_STATE, atol: 1e-10 });
-        expect(result.state.Wliq).toBeAllclose(exp.Wliq, { rtol: RTOL_STATE });
-        expect(result.state.Sat).toBeAllclose(exp.Sat, { rtol: RTOL_STATE });
-        expect(result.state.beta).toBeAllclose(exp.beta, { rtol: RTOL_STATE });
-        expect(result.state.Psi).toBeAllclose(exp.Psi, { rtol: RTOL_STATE, atol: 1e-10 });
-        expect(result.state.Kh).toBeAllclose(exp.Kh, { rtol: 0.5, atol: 1e-6 });
+        expect(result.state.WatSto).toBeAllclose(exp.WatSto, { rtol: RTOL_SW });
+        expect(result.state.PondSto).toBeAllclose(exp.PondSto, { rtol: RTOL_SW, atol: eps });
+        expect(result.state.Wliq).toBeAllclose(exp.Wliq, { rtol: RTOL_SW });
+        expect(result.state.Sat).toBeAllclose(exp.Sat, { rtol: RTOL_SW });
+        expect(result.state.beta).toBeAllclose(exp.beta, { rtol: RTOL_SW });
+        expect(result.state.Psi).toBeAllclose(exp.Psi, { rtol: RTOL_SW, atol: eps });
+        expect(result.state.Kh).toBeAllclose(exp.Kh, { rtol: RTOL_SW, atol: ATOL_KH });
 
         // Flux checks
-        expect(result.flux.Infiltration).toBeAllclose(exp.Infiltration, { rtol: RTOL_FLUX });
-        expect(result.flux.Drainage).toBeAllclose(exp.Drainage, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(result.flux.ET).toBeAllclose(exp.ET, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(result.flux.Runoff).toBeAllclose(exp.Runoff, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(result.flux.LateralFlow).toBeAllclose(exp.LateralFlow, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(result.flux.mbe).toBeAllclose(exp.mbe, { rtol: RTOL_FLUX, atol: 1e-6 });
+        expect(result.flux.Infiltration).toBeAllclose(exp.Infiltration, { rtol: RTOL_SW });
+        expect(result.flux.Drainage).toBeAllclose(exp.Drainage, { rtol: RTOL_SW, atol: eps });
+        expect(result.flux.ET).toBeAllclose(exp.ET, { rtol: RTOL_SW, atol: eps });
+        expect(result.flux.Runoff).toBeAllclose(exp.Runoff, { rtol: RTOL_SW, atol: eps });
+        expect(result.flux.LateralFlow).toBeAllclose(exp.LateralFlow, { rtol: RTOL_SW, atol: eps });
+        expect(result.flux.mbe).toBeAllclose(exp.mbe, { rtol: RTOL_SW, atol: ATOL_MBE });
 
         // Inout args
-        expect(result.trOut).toBeAllclose(exp.tr_out, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(result.evapOut).toBeAllclose(exp.evap_out, { rtol: RTOL_FLUX, atol: 1e-10 });
-        expect(result.latflowOut).toBeAllclose(exp.latflow_out, { rtol: RTOL_FLUX, atol: 1e-10 });
+        expect(result.trOut).toBeAllclose(exp.tr_out, { rtol: RTOL_SW, atol: eps });
+        expect(result.evapOut).toBeAllclose(exp.evap_out, { rtol: RTOL_SW, atol: eps });
+        expect(result.latflowOut).toBeAllclose(exp.latflow_out, { rtol: RTOL_SW, atol: eps });
       } finally {
         // Dispose (always, even on assertion failure)
         result.state.WatSto.dispose(); result.state.PondSto.dispose();

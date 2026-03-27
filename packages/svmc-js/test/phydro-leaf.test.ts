@@ -1,7 +1,7 @@
 /// <reference path="./vitest.d.ts" />
 
 import { describe, it, expect } from "vitest";
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { np } from "../src/precision.js";
 import {
   ftempArrh,
   gammastar,
@@ -247,8 +247,8 @@ describe("P-Hydro solver — Fortran reference", () => {
         c.inputs.psi_soil,
         c.inputs.rdark_leaf,
       );
-      // TS uses float32 + FD gradients; Fortran uses float64 + FD gradients.
-      // Tolerance reflects both optimizer convergence diff and float32 precision.
+      // Default TS mode uses float32 + FD gradients; Fortran uses float64 + FD gradients.
+      // Tolerance reflects both optimizer convergence diff and default float32 precision.
       const rtol = 5e-2;
       const atol = 1e-4;
       for (const key of [

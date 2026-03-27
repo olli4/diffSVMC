@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { numpy as np } from "@hamk-uas/jax-js-nonconsuming";
+import { numpy as baseNp } from "@hamk-uas/jax-js-nonconsuming";
+import { getNumericDType, np } from "../src/precision.js";
 import {
   eSat,
   penmanMonteith,
@@ -12,6 +13,26 @@ import type { SoilHydroParams } from "../src/water/soil-hydraulics.js";
 import type { SpafhyAeroParams } from "../src/water/aerodynamics.js";
 import waterFixtures from "../../svmc-ref/fixtures/water.json";
 
+// Machine epsilon for the configured numeric dtype.
+const eps = baseNp.finfo(getNumericDType()).eps;
+
+// Per-function relative tolerances derived from critical-path operation depth
+// with a ≥2× safety factor.  Each comment states the critical-path length and
+// the empirically observed maximum relative error (float32 vs Fortran float64).
+//
+// e_sat:           5-op critical path;  observed max_rel < 1 eps
+// penman_monteith: 8-op critical path;  observed max_rel < 1 eps
+// soil_retention:  8-op path + Van Genuchten power amplification; observed ~26 eps
+// soil_conductivity: 7-op path + Mualem conditioning; atol covers float32 underflow
+// exp_smooth:      3-op critical path;  well-conditioned convex combination
+// aerodynamics:   11-op critical path;  observed max_rel < 1 eps
+const RTOL_ESAT = 16 * eps;
+const RTOL_PM = 16 * eps;
+const RTOL_SOIL_RET = 64 * eps;
+const RTOL_SOIL_COND = 64 * eps;
+const RTOL_SMOOTH = 8 * eps;
+const RTOL_AERO = 32 * eps;
+
 describe("Water module leaf functions — Fortran reference", () => {
   for (const c of waterFixtures.e_sat) {
     it(`e_sat: tc=${c.inputs.tc}, patm=${c.inputs.patm}`, async () => {
@@ -19,9 +40,9 @@ describe("Water module leaf functions — Fortran reference", () => {
       using P = np.array(c.inputs.patm);
       const { esat, s, gamma } = eSat(T, P);
       const exp = c.output;
-      expect(esat).toBeAllclose(exp.esat, { rtol: 5e-3 });
-      expect(s).toBeAllclose(exp.s, { rtol: 5e-3 });
-      expect(gamma).toBeAllclose(exp.g, { rtol: 5e-3 });
+      expect(esat).toBeAllclose(exp.esat, { rtol: RTOL_ESAT });
+      expect(s).toBeAllclose(exp.s, { rtol: RTOL_ESAT });
+      expect(gamma).toBeAllclose(exp.g, { rtol: RTOL_ESAT });
       esat.dispose(); s.dispose(); gamma.dispose();
     });
   }
@@ -35,7 +56,7 @@ describe("Water module leaf functions — Fortran reference", () => {
       using Ga = np.array(c.inputs.Ga);
       using P = np.array(c.inputs.patm);
       using result = penmanMonteith(AE, D, T, Gs, Ga, P);
-      expect(result).toBeAllclose(c.output as number, { rtol: 5e-4 });
+      expect(result).toBeAllclose(c.output as number, { rtol: RTOL_PM });
     });
   }
 
@@ -50,7 +71,7 @@ describe("Water module leaf functions — Fortran reference", () => {
       };
       using volLiq = np.array(c.inputs.vol_liq);
       using result = soilWaterRetentionCurve(volLiq, params);
-      expect(result).toBeAllclose(c.output as number, { rtol: 5e-3 });
+      expect(result).toBeAllclose(c.output as number, { rtol: RTOL_SOIL_RET });
       params.nVan.dispose(); params.alphaVan.dispose();
       params.watsat.dispose(); params.watres.dispose(); params.ksat.dispose();
     });
@@ -67,8 +88,11 @@ describe("Water module leaf functions — Fortran reference", () => {
       };
       using volLiq = np.array(c.inputs.vol_liq);
       using result = soilHydraulicConductivity(volLiq, params);
-      // float32 underflow for very small conductivities is expected
-      expect(result).toBeAllclose(c.output as number, { rtol: 0.5, atol: 1e-6 });
+      // Mualem formula is ill-conditioned near saturation boundaries: catastrophic
+      // cancellation in 1-(1-S^(1/m))^m produces large condition numbers for small
+      // outputs.  atol = eps provides a float32 noise floor; rtol covers the
+      // well-conditioned regime.
+      expect(result).toBeAllclose(c.output as number, { rtol: RTOL_SOIL_COND, atol: eps });
       params.nVan.dispose(); params.alphaVan.dispose();
       params.watsat.dispose(); params.watres.dispose(); params.ksat.dispose();
     });
@@ -80,7 +104,7 @@ describe("Water module leaf functions — Fortran reference", () => {
       using rolling = np.array(c.inputs.met_rolling_in);
       const { metRolling, metInd } = exponentialSmoothMet(daily, rolling, c.inputs.met_ind_in);
       const exp = c.output;
-      expect(metRolling).toBeAllclose(exp.met_rolling, { rtol: 5e-3 });
+      expect(metRolling).toBeAllclose(exp.met_rolling, { rtol: RTOL_SMOOTH });
       expect(metInd).toBe(exp.met_ind);
       metRolling.dispose();
     });
@@ -99,12 +123,12 @@ describe("Water module leaf functions — Fortran reference", () => {
       using Uo = np.array(c.inputs.Uo);
       const result = aerodynamics(LAI, Uo, params);
       const exp = c.output;
-      expect(result.ra).toBeAllclose(exp.ra, { rtol: 5e-3 });
-      expect(result.rb).toBeAllclose(exp.rb, { rtol: 5e-3, atol: 1e-10 });
-      expect(result.ras).toBeAllclose(exp.ras, { rtol: 5e-3 });
-      expect(result.ustar).toBeAllclose(exp.ustar, { rtol: 5e-3 });
-      expect(result.Uh).toBeAllclose(exp.Uh, { rtol: 5e-3 });
-      expect(result.Ug).toBeAllclose(exp.Ug, { rtol: 5e-3 });
+      expect(result.ra).toBeAllclose(exp.ra, { rtol: RTOL_AERO });
+      expect(result.rb).toBeAllclose(exp.rb, { rtol: RTOL_AERO, atol: eps });
+      expect(result.ras).toBeAllclose(exp.ras, { rtol: RTOL_AERO });
+      expect(result.ustar).toBeAllclose(exp.ustar, { rtol: RTOL_AERO });
+      expect(result.Uh).toBeAllclose(exp.Uh, { rtol: RTOL_AERO });
+      expect(result.Ug).toBeAllclose(exp.Ug, { rtol: RTOL_AERO });
       result.ra.dispose(); result.rb.dispose(); result.ras.dispose();
       result.ustar.dispose(); result.Uh.dispose(); result.Ug.dispose();
       params.hc.dispose(); params.zmeas.dispose(); params.zground.dispose();
