@@ -127,7 +127,7 @@ Quality bar carried over from Phase 3:
   - `yasso.initialize_totc` (Setup routines).
   - `yasso.decompose` (Daily decomposition).
   - `yasso20.mod5c20` (Yearly spin-up calculations; matrix exponentials).
-  - _TS Port Note: `jax-js-nonconsuming` lacks `expm`. Make a custom TS implementation of the exact Fortran Taylor-series scaling & squaring method to match numerical behavior perfectly._
+  - _TS Port Note: `jax-js-nonconsuming` currently lacks `expm`. Request the `jax-js-nonconsuming` team to implement it before the Yasso20 TS port begins._
 
 ## Phase 5: Main SVMC Integration Loop
 
