@@ -12,10 +12,17 @@ temperatures, annual precipitation, size class, and leaching rate.
 
 import jax.numpy as jnp
 
-from .matrixexp import matrixexp
+from .matrixexp import matrixexp, matrixnorm
 
 
 _TOL = 1e-12
+
+# Threshold for switching between Taylor and direct computation of
+# (exp(At) - I)·b.  Below this, the subtraction exp(At)·b - b cancels
+# catastrophically; above it, the direct subtraction is accurate.
+# sqrt(eps) balances Taylor truncation error ≈ ||At||² against
+# cancellation error ≈ eps / ||At||.
+_NORM_SWITCH = jnp.sqrt(jnp.finfo(jnp.float64).eps)
 
 
 def _build_coefficient_matrix(
@@ -163,9 +170,23 @@ def _solve_transient(
     init: jnp.ndarray,
     b: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Transient: x(t) = A⁻¹ · (exp(At) · (A·init + b) − b)."""
-    z1 = jnp.matmul(A, init) + b
+    """Transient: x(t) = A⁻¹ · (exp(At)·(A·init + b) − b).
+
+    Split z₂ = exp(At)·z₁ − b into two parts to avoid catastrophic
+    cancellation when ||At|| is small (exp(At) ≈ I makes exp(At)·b − b ≈ 0):
+      z₂ = exp(At)·(A·init) + (exp(At) − I)·b
+                   ↑ stable        ↑ use Taylor when small
+    """
+    ainit = jnp.matmul(A, init)
     At = A * time
     mexpAt = matrixexp(At)
-    z2 = jnp.matmul(mexpAt, z1) - b
+    z2_init = jnp.matmul(mexpAt, ainit)
+
+    # (exp(At) − I)·b: Taylor gives At·b; direct gives exp(At)·b − b.
+    z2_b_direct = jnp.matmul(mexpAt, b) - b
+    z2_b_taylor = jnp.matmul(At, b)
+    norm_at = matrixnorm(At)
+    z2_b = jnp.where(norm_at <= _NORM_SWITCH, z2_b_taylor, z2_b_direct)
+
+    z2 = z2_init + z2_b
     return jnp.linalg.solve(A, z2)
