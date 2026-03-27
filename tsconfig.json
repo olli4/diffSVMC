@@ -13,7 +13,7 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
-    "lib": ["ES2022"]
+    "lib": ["ES2022", "ESNext.Disposable"]
   },
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

@@ -372,7 +372,7 @@ export function pmodelHydraulicsNumerical(
     conductivity: np.array(conductivityVal),
     psi50: np.array(psi50Val),
     b: np.array(bParam),
-  }) as ParPlant;
+  }) as ParPlant & Disposable;
 
   using tcArr = np.array(tc);
   using spArr = np.array(sp);
@@ -404,14 +404,14 @@ export function pmodelHydraulicsNumerical(
     ca,
     patm: parPhotosynthPatm,
     delta: parPhotosynthDelta,
-  }) as ParPhotosynth;
+  }) as ParPhotosynth & Disposable;
   using parEnv = tree.makeDisposable({
     viscosityWater: viscWater,
     densityWater: densWater,
     patm: parEnvPatm,
     tc: parEnvTc,
     vpd: parEnvVpd,
-  }) as ParEnv;
+  }) as ParEnv & Disposable;
 
   // Evaluate diagnostics at optimum
   using profitRaw = opt.objectiveLoss.neg();
