@@ -98,6 +98,8 @@ WATER_FUNCTIONS = {
 
 YASSO_FUNCTIONS = {
     "inputs_to_fractions",
+    "matrixnorm",
+    "matrixexp",
 }
 
 

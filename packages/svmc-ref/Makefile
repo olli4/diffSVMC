@@ -25,6 +25,7 @@ MODOBJS = \
 	readvegpara_mod.o \
 	readsoilpara_mod.o \
 	yasso.o \
+	yassofortran20.o \
 	phydro_mod.o \
 	water_mod.o \
 	blas.o \
@@ -69,6 +70,9 @@ timer.o: $(SVMC_SRC)/timer.f
 	$(FC) -c $(FFLAGS) $<
 
 yasso.o: $(SVMC_SRC)/yasso.f90
+	$(FC) -c $(FFLAGS) $<
+
+yassofortran20.o: $(SVMC_SRC)/yassofortran20.f90
 	$(FC) -c $(FFLAGS) $<
 
 clean:

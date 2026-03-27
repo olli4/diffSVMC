@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import pytest
 
 from svmc_jax.yasso.leaf_functions import inputs_to_fractions
+from svmc_jax.yasso.matrixexp import matrixexp, matrixnorm
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "../../svmc-ref/fixtures"
 YASSO = json.loads((FIXTURES_DIR / "yasso.json").read_text())
@@ -50,3 +51,61 @@ def test_inputs_to_fractions_linearity():
     r1 = inputs_to_fractions(1.0, 0.5, 0.2, 0.3)
     r2 = inputs_to_fractions(2.0, 1.0, 0.4, 0.6)
     assert jnp.allclose(r2, 2.0 * r1, rtol=1e-12)
+
+
+# ── matrixnorm ───────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("c", YASSO["matrixnorm"],
+    ids=lambda c: "diag=" + "_".join(f"{c['inputs']['a'][i][i]:.2f}" for i in range(5)))
+def test_matrixnorm(c):
+    a = jnp.array(c["inputs"]["a"])
+    result = matrixnorm(a)
+    assert jnp.allclose(result, c["output"], rtol=RTOL)
+
+
+# ── matrixexp ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("c", YASSO["matrixexp"],
+    ids=lambda c: "diag=" + "_".join(f"{c['inputs']['a'][i][i]:.2f}" for i in range(5)))
+def test_matrixexp(c):
+    a = jnp.array(c["inputs"]["a"])
+    expected = jnp.array(c["output"])
+    result = matrixexp(a)
+    assert jnp.allclose(result, expected, rtol=RTOL)
+
+
+# ── matrixexp invariants ─────────────────────────────────────────────
+
+
+def test_matrixexp_zero_is_identity():
+    """exp(0) = I."""
+    result = matrixexp(jnp.zeros((5, 5)))
+    assert jnp.allclose(result, jnp.eye(5), atol=1e-12)
+
+
+def test_matrixexp_diagonal():
+    """exp(diag(a)) = diag(exp(a))."""
+    diag_vals = jnp.array([-0.5, -0.3, -0.2, -0.1, -0.05])
+    a = jnp.diag(diag_vals)
+    result = matrixexp(a)
+    expected = jnp.diag(jnp.exp(diag_vals))
+    assert jnp.allclose(result, expected, rtol=1e-6)
+
+
+def test_matrixexp_jit():
+    """matrixexp should be JIT-compilable."""
+    jit_matrixexp = jax.jit(matrixexp)
+    a = jnp.diag(jnp.array([-0.1, -0.2, -0.3, -0.4, -0.5]))
+    result = jit_matrixexp(a)
+    expected = matrixexp(a)
+    assert jnp.allclose(result, expected, rtol=1e-12)
+
+
+def test_matrixexp_gradient():
+    """Gradients of matrixexp should be finite."""
+    a = jnp.diag(jnp.array([-0.1, -0.2, -0.3, -0.4, -0.5]))
+    grad_fn = jax.grad(lambda x: jnp.sum(matrixexp(x)))
+    g = grad_fn(a)
+    assert jnp.all(jnp.isfinite(g))

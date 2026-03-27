@@ -10,7 +10,8 @@ The goal is a numerically faithful, fully differentiable reimplementation suitab
 
 ```
 packages/
-  svmc-ref/    Fortran reference harness, fixture generation, branch audit
+  svmc-ref/    Fortran reference test harness (driver program that exercises
+               original routines), fixture generation, branch audit
   svmc-jax/    JAX reimplementation (float64, autodiff, invariant tests)
   svmc-js/     TypeScript reimplementation (float32/float64, browser-ready)
 vendor/
@@ -21,14 +22,19 @@ issues/        Upstream bug reports for SVMC
 
 ## Porting approach
 
-Each submodel is ported bottom-up (leaf functions first), following the phased plan in [PLAN.md](PLAN.md):
+Each submodel is ported bottom-up (leaf functions — the lowest-level routines with no internal sub-calls — first), following the phased plan in [PLAN.md](PLAN.md):
 
-1. **Fortran reference logging** — harness captures inputs/outputs as JSONL fixtures.
-2. **Branch audit** — every conditional branch is annotated with `PORT-BRANCH` tags, registered, and evaluated for fixture coverage.
-3. **JAX port** — differentiable reimplementation with `jnp.where` for branch-free autodiff. Tested with fixture playback, metamorphic invariants, and gradient/OOD validation.
-4. **TypeScript port** — `@hamk-uas/jax-js-nonconsuming` reimplementation tested against the same fixtures, with `checkLeaks` memory safety and epsilon-derived tolerance bounds.
+1. **Fortran reference logging** — the test harness (a driver program that calls each original Fortran routine over a grid of inputs) captures inputs and outputs as JSONL (newline-delimited JSON) fixtures (saved reference data used as ground-truth test cases).
+2. **Branch audit** — every conditional branch in the Fortran source is annotated with a `PORT-BRANCH` tag, registered in a coverage manifest, and evaluated for whether the fixtures exercise it.
+3. **JAX port** — differentiable reimplementation using `jnp.where` for branch-free autodiff (automatic differentiation). Tested with fixture playback, metamorphic invariants (tests that check mathematical properties like monotonicity or conservation rather than exact values), and gradient/out-of-distribution validation.
+4. **TypeScript port** — `@hamk-uas/jax-js-nonconsuming` reimplementation tested against the same fixtures, with `checkLeaks` (runtime verification that every GPU array is properly disposed) memory safety and epsilon-derived (computed from the floating-point precision limit) tolerance bounds.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
+
+## Current deviations
+
+- The TypeScript `matrixExp` helper currently uses a bounded masked-squaring policy (`MAX_J = 20`) because the present `lax.foriLoop` API requires a static loop bound. The current reference fixtures explicitly stay within that bound; widening or removing it is required before using the helper on materially larger matrix norms.
+- Phase 4 Yasso validation is still in progress. The current `matrixExp` coverage now mixes analytic sanity cases and matrices generated through the real `yasso20.mod5c20` coefficient-matrix path, but full wrapper-boundary yearly Yasso fixtures are still pending.
 
 ## Current status
 
