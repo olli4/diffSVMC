@@ -6,14 +6,14 @@ This document outlines the phased, bottom-up plan for porting the SVMC process m
 
 To prevent technical debt and ensure a rigorous port, every function/submodel must meet these criteria before moving to the next:
 
-1. **Fortran Reference Covered**: Logging captures baseline examples _and_ explicitly forces both single and combined branch-triggering conditions. For wrapper submodels, cross-level wrapper traces must be logged to validate composition (e.g., argument order, units).
+1. **Fortran Reference Covered**: Logging captures baseline examples _and_ explicitly forces both single and combined branch-triggering conditions. For wrapper submodels, cross-level wrapper traces must be logged to validate composition (e.g., argument order, units). Any `PORT-BRANCH` added in vendor/harness/ports must be registered in `branch-coverage.json` and evaluated by `verify_branch_coverage.py` before the phase can close.
 2. **Fixture & State Contract Established**: Reference JSON fixtures form a strict state-shape and interface contract across packages. Schema changes require simultaneous regeneration and alignment across `svmc-ref`, `svmc-jax`, and `svmc-js`.
 3. **Invariant Validation**: JAX tests must include physical/metamorphic invariant checks (e.g., monotonicity, mass conservation) to expose plausible bugs that static fixture playback misses. TS-side invariant tests are recommended but not gating; the JAX invariants are the primary validation layer since they run at float64 and have autodiff access.
 4. **Numerically Faithful & Differentiable**: JAX implementation matches Fortran mathematically and handles non-smooth operations via autodiff-friendly constructs (`jax.lax.cond`, soft-clamps).
 5. **Gradients & OOD Validated**: Verify that `jax.grad` produces finite, stable gradients across both the baseline fixture input range **and** Out-of-Distribution (OOD) adversarial bounds to ensure L-BFGS inversion won't crash on unphysical edge cases.
 6. **Browser Port Verified & Memory Safe**: The `@hamk-uas/jax-js-nonconsuming` port passes fixture validation against the same reference data as JAX. If a JAX construct does not map cleanly, implement and document a fallback. Every TS test must pass under `checkLeaks` (zero leaked arrays). All TS source must pass the jax-js ESLint plugin (`recommended` config; upgrade to `strict` once existing chain issues are resolved).
-7. **Temporal Rollout Vetted** _(Phases 3-5 only)_: Stateful submodels must pass a 100+ step sequential rollout fixture to prove that TS `float32` accumulation errors do not diverge fatally from JAX/Fortran `float64` baselines.
-8. **Phase-Exit Gate**: A submodel's phase is complete only when all criteria pass in CI (pytest + vitest). Do not begin the next phase until the gate is green.
+7. **Temporal Rollout Vetted** _(Phases 3-5 only)_: Stateful submodels must pass a 100+ step sequential rollout fixture in default TS `float32` mode to prove accumulation errors do not diverge fatally from JAX/Fortran `float64` baselines. When TS `float64` mode is available, use it as the tighter browser-side parity reference.
+8. **Phase-Exit Gate**: A submodel's phase is complete only when all criteria pass in CI (`branch:audit` + pytest + vitest). Do not begin the next phase until the gate is green.
 9. **No Silent Shortcuts**: If any criterion above is partially met or intentionally deferred, document the gap explicitly in the phase status below with a rationale. Do not mark a criterion as complete when coverage is incomplete.
 
 ## Phase 0: Project Foundation & Initial Porting (Completed)
@@ -60,7 +60,7 @@ Combine the confirmed leaf functions into their dependent wrappers.
 - `calc_gs` (depends on `scale_conductivity`). ✅ JAX + TS ported, fixture-tested.
 - `fn_profit` (objective function forming the core of P-Hydro optimization). ✅ JAX + TS ported, fixture-tested, OOD gradient-tested.
 - **Optimizer Overhaul (`optimise_midterm_multi`)**: ✅ Both JAX and TS now use projected Optax Adam (512 steps, lr=0.05, grad-clipping=10) with traced autodiff (`jax.value_and_grad` / `valueAndGrad`), replacing both Fortran's finite-difference L-BFGS-B and the earlier scipy/custom-L-BFGS approaches. The entire optimizer runs inside `jit`/`lax.scan` (TS) or `jax.lax.fori_loop` (JAX), keeping the optimization composable with larger JIT-compiled loops. Both fixture-tested against 6 reference cases.
-  - _JAX vs Fortran tolerance: ~0.3% relative. TS tolerance: ~5% relative (float32)._
+  - _JAX vs Fortran tolerance: ~0.3% relative. TS default `float32` tolerance: ~5% relative. TS `float64` mode is available via `SVMC_JS_DTYPE=float64` for tighter browser-side parity checks._
   - _Invariant-tested: VPD monotonicity, drought monotonicity, aj/gs/ci consistency._
 - `pmodel_hydraulics_numerical` (the overarching solver wrapper). ✅ JAX + TS ported, 7 fixture reference cases spanning environmental gradients, invariant-tested.
 
@@ -79,7 +79,7 @@ Combine the confirmed leaf functions into their dependent wrappers.
 ### Phase 2 Known Shortcuts
 
 - **Optax replaces scipy/Fortran L-BFGS-B**: The JAX solver uses `optax.adam` inside `jax.lax.fori_loop` instead of `scipy.optimize.minimize`. The TS solver uses `lax.scan` with Optax `adam` + `clipByGlobalNorm`. Both match Fortran reference outputs within tolerance but use a fundamentally different optimizer algorithm (first-order Adam vs quasi-Newton L-BFGS-B).
-- **TS float32 tolerance**: TS solver tests use ~5% relative tolerance vs Fortran float64 reference due to float32 arithmetic in the 512-step optimization loop.
+- **TS precision modes**: `svmc-js` now supports `SVMC_JS_DTYPE=float32|float64`. Solver tests and default browser runs still target `float32` because that is the primary performance mode; `float64` is available for higher-accuracy parity checks and future rollout comparisons.
 
 ## Phase 3: SpaFHy Submodels (Canopy & Soil Water Balance)
 
@@ -92,20 +92,21 @@ Move to canopy/soil hydrology processes which manage the local water states.
 
 | Criterion                             | Status                                                                                                                                                                                                                                          |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fortran reference covered             | ✅ 23 fixture cases across ground_evaporation (6), canopy_water_snow (6), canopy_water_flux (6), soil_water (5). Branch-triggering fixtures cover warm/cold precipitation, sublimation vs evaporation, snow melt/freeze, LAI=0 guard, saturation. |
-| Fixture & state contract              | ✅ JSON fixtures shared across svmc-ref, svmc-jax, svmc-js (water.json, 214 total records).                                                                                                                                                     |
+| Fortran reference covered             | ✅ 29 fixture cases across ground_evaporation (8), canopy_water_snow (8), canopy_water_flux (8), soil_water (5). Branch-triggering fixtures now cover warm/cold/mixed precipitation, sublimation vs evaporation vs precip-suppressed no-evap, positive snow melt/freeze/no-change, LAI=0 guard, and saturation. 7 Phase 3 `PORT-BRANCH` ids are registered in vendor + registry + evaluator; branch audit passes (24 total, 20/24 covered, 4 pre-existing waivers). |
+| Fixture & state contract              | ✅ JSON fixtures shared across svmc-ref, svmc-jax, svmc-js (water.json, 220 total records).                                                                                                                                                     |
 | Invariant validation                  | ✅ 7 invariant/metamorphic tests in JAX: CWS mass balance, soil water mass balance, ground evap non-negative, ground evap zero-with-snow, CWS differentiable, soil water differentiable, canopy precip monotonicity.                              |
 | Numerically faithful & differentiable | ✅ All `jnp.where` branch-free for AD; soil_hydraulic_conductivity uses `jnp.where(not_saturated, k_formula(safe=0.5), ksat)` for gradient-safe saturation handling.                                                                             |
 | Gradients & OOD validated             | ✅ canopy_water_snow_differentiable and soil_water_differentiable tests verify finite, non-zero gradients through the full functions.                                                                                                             |
-| Browser port verified & memory safe   | ✅ 23/23 vitest pass with checkLeaks (zero leaked slots). All operation chains broken into explicit `using` intermediates; `np.logicalAnd` replaced with `.mul()` (nonconsuming). mbe atol=1e-6 for float32.                                      |
-| Phase-exit gate                       | ✅ pytest (556) + vitest (526) all green.                                                                                                                                                                                                        |
+| Browser port verified & memory safe   | ✅ 29/29 Phase 3 vitest cases pass with checkLeaks (zero leaked slots). All operation chains broken into explicit `using` intermediates; `np.logicalAnd` replaced with `.mul()` (nonconsuming). `svmc-js` supports both `float32` and `float64` via immutable load-time configuration from `SVMC_JS_DTYPE`. |
+| Phase-exit gate                       | ✅ branch audit (24 tags, 20/24 covered) + pytest (562) + vitest (535) all green. Full `svmc-js` suite passes in both `SVMC_JS_DTYPE=float32` and `SVMC_JS_DTYPE=float64` modes. |
 
 ### Phase 3 Known Shortcuts
 
-- **Fortran mbe accounting artifact**: The Fortran `soil_water` mass-balance formula uses `rr = potinf + PondSto_old`, double-counting `PondSto_old` in the flux term. JAX and TS replicate this formula exactly; tests compare against fixture expected mbe rather than asserting mbe ≈ 0.
-- **Lateral flow hardcoded to 0**: The Fortran reference hardcodes lateral drainage to zero. Both JAX and TS replicate this; the parameter is reserved for future use.
+- **Fortran mbe accounting artifact** (`vendor/SVMC/src/water_mod.f90` L128 `rr = potinf + PondSto`, L185-187 mbe formula): The Fortran `soil_water` mass-balance formula uses `rr = potinf + PondSto_old`, double-counting `PondSto_old` in the flux term. JAX and TS replicate this formula exactly; tests compare against fixture expected mbe rather than asserting mbe ≈ 0.
+- **Lateral flow hardcoded to 0** (`vendor/SVMC/src/water_mod.f90` L118 `latflow = 0.0`, L145-146 re-zeroed after comment `! lateral drainage to ditches here!`): The Fortran reference hardcodes lateral drainage to zero. Both JAX and TS replicate this; the parameter is reserved for future use.
 - **ET and Transpiration set to 0 in `canopy_water_flux`**: These will be populated by P-Hydro in Phase 5 integration.
-- **TS float32 mbe tolerance**: Mass-balance error assertions use atol=1e-6 to accommodate ~1e-8 float32 accumulation noise in the ~80-operation canopy_water_snow function.
+- **TS precision switch**: `svmc-js` array creation is routed through a project-local precision wrapper. Default mode is `float32`; `SVMC_JS_DTYPE=float64` enables higher-accuracy execution without changing call sites. The dtype is fixed at module-load time rather than mutated globally at runtime.
+- **TS float32 tolerances**: All TS test tolerances are derived from machine epsilon (`baseNp.finfo(dtype).eps`) scaled by each function's critical-path operation depth with a ≥2× safety factor.  Near-zero fields (mbe, Kh) use an `atol` noise floor instead of loose relative tolerance — `128 * eps` for mass-balance sums, `eps` for Mualem-formula underflow.  The `sublim_vs_evap` branch-audit evaluator additionally requires `LAI > eps` to match the enclosing Fortran guard.
 
 ## Phase 4: Carbon Allocation & Yasso20 Decomposition
 
