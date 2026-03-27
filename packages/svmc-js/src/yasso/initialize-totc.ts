@@ -38,6 +38,13 @@ function el(arr: np.Array, i: number): np.Array {
   return arr.slice(i);
 }
 
+function requireUnitInterval(name: string, value: np.Array): void {
+  const scalar = value.item() as number;
+  if (scalar < 0.0 || scalar > 1.0) {
+    throw new RangeError(`${name} must be in [0, 1], got ${scalar}`);
+  }
+}
+
 /**
  * Build the 5x5 AWENH decomposition matrix using 4-point temperature averaging.
  *
@@ -240,6 +247,9 @@ export function initializeTotcFn(
   precipDay: np.Array,
   temprAmpl: np.Array,
 ): { cstate: np.Array; nstate: np.Array } {
+  requireUnitInterval("fractRootInput", fractRootInput);
+  requireUnitInterval("fractLegacySoc", fractLegacySoc);
+
   // Build matrix from mean temperature
   using precipYr = precipDay.mul(DAYS_YR);
   using matrix = evaluateMatrixMeanTempr(param, temprC, precipYr, temprAmpl);

@@ -12,7 +12,7 @@ from svmc_jax.yasso.leaf_functions import inputs_to_fractions
 from svmc_jax.yasso.matrixexp import matrixexp, matrixnorm
 from svmc_jax.yasso.mod5c20 import mod5c20
 from svmc_jax.yasso.decompose import decompose
-from svmc_jax.yasso.initialize_totc import initialize_totc
+from svmc_jax.yasso.initialize_totc import initialize_totc, initialize_totc_checked
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "../../svmc-ref/fixtures"
 YASSO = json.loads((FIXTURES_DIR / "yasso.json").read_text())
@@ -458,6 +458,38 @@ def test_initialize_totc_carbon_conservation():
         )
         assert jnp.allclose(jnp.sum(cstate), inp["totc"], rtol=1e-6), \
             f"Carbon not conserved: sum(cstate)={float(jnp.sum(cstate))} vs totc={inp['totc']}"
+
+
+def test_initialize_totc_invalid_fract_root_input():
+    """Out-of-range fract_root_input should raise."""
+    inp = YASSO["initialize_totc"][0]["inputs"]
+    with pytest.raises(ValueError, match="fract_root_input must be in \\[0, 1\\]"):
+        initialize_totc_checked(
+            jnp.array(inp["param"]),
+            jnp.array(inp["totc"]),
+            jnp.array(inp["cn_input"]),
+            jnp.array(1.1),
+            jnp.array(inp["fract_legacy_soc"]),
+            jnp.array(inp["tempr_c"]),
+            jnp.array(inp["precip_day"]),
+            jnp.array(inp["tempr_ampl"]),
+        )
+
+
+def test_initialize_totc_invalid_fract_legacy_soc():
+    """Out-of-range fract_legacy_soc should raise in the checked wrapper."""
+    inp = YASSO["initialize_totc"][0]["inputs"]
+    with pytest.raises(ValueError, match="fract_legacy_soc must be in \\[0, 1\\]"):
+        initialize_totc_checked(
+            jnp.array(inp["param"]),
+            jnp.array(inp["totc"]),
+            jnp.array(inp["cn_input"]),
+            jnp.array(inp["fract_root_input"]),
+            jnp.array(-0.1),
+            jnp.array(inp["tempr_c"]),
+            jnp.array(inp["precip_day"]),
+            jnp.array(inp["tempr_ampl"]),
+        )
 
 
 def test_initialize_totc_leaf_root_equivalence():

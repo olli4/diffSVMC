@@ -134,6 +134,40 @@ describe("initialize_totc — invariants", () => {
       4,
     );
   });
+
+  it("rejects fractRootInput outside [0, 1]", async () => {
+    const c = yassoFixtures.initialize_totc[0];
+    using param = np.array(c.inputs.param as number[]);
+    using totc = np.array(c.inputs.totc as number);
+    using cnInput = np.array(c.inputs.cn_input as number);
+    using fractRootInput = np.array(1.1);
+    using fractLegacySoc = np.array(c.inputs.fract_legacy_soc as number);
+    using temprC = np.array(c.inputs.tempr_c as number);
+    using precipDay = np.array(c.inputs.precip_day as number);
+    using temprAmpl = np.array(c.inputs.tempr_ampl as number);
+
+    expect(() => initializeTotcFn(
+      param, totc, cnInput, fractRootInput, fractLegacySoc,
+      temprC, precipDay, temprAmpl,
+    )).toThrow(/fractRootInput must be in \[0, 1\]/);
+  });
+
+  it("rejects fractLegacySoc outside [0, 1]", async () => {
+    const c = yassoFixtures.initialize_totc[0];
+    using param = np.array(c.inputs.param as number[]);
+    using totc = np.array(c.inputs.totc as number);
+    using cnInput = np.array(c.inputs.cn_input as number);
+    using fractRootInput = np.array(c.inputs.fract_root_input as number);
+    using fractLegacySoc = np.array(-0.1);
+    using temprC = np.array(c.inputs.tempr_c as number);
+    using precipDay = np.array(c.inputs.precip_day as number);
+    using temprAmpl = np.array(c.inputs.tempr_ampl as number);
+
+    expect(() => initializeTotcFn(
+      param, totc, cnInput, fractRootInput, fractLegacySoc,
+      temprC, precipDay, temprAmpl,
+    )).toThrow(/fractLegacySoc must be in \[0, 1\]/);
+  });
 });
 
 describe("initialize_totc — autodiff", () => {

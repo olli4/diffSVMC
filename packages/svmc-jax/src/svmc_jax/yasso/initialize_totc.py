@@ -34,6 +34,12 @@ _MAX_CUE_ITER = 10
 _PI = 3.141592653589793
 
 
+def _require_unit_interval(name: str, value: object) -> None:
+    scalar = float(value)
+    if scalar < 0.0 or scalar > 1.0:
+        raise ValueError(f"{name} must be in [0, 1], got {scalar}")
+
+
 def _evaluate_matrix_mean_tempr(
     param: jnp.ndarray,
     tempr: jnp.ndarray,
@@ -187,6 +193,10 @@ def initialize_totc(
 
     Fortran reference: vendor/SVMC/src/yasso.f90 L184–236
 
+    Pure JAX compute kernel: callers must satisfy the documented [0, 1]
+    fraction preconditions before tracing or differentiating through this
+    function. Use initialize_totc_checked for eager host-side validation.
+
     The output is a weighted blend of:
       - equilibrium: solve A·x = -input for unit input, scale to match totc
       - legacy: all carbon in H pool, nitrogen at nc_h_max
@@ -229,3 +239,33 @@ def initialize_totc(
     nstate = fract_legacy_soc * totc * _NC_H_MAX + (1.0 - fract_legacy_soc) * eqnitr
 
     return cstate, nstate
+
+
+def initialize_totc_checked(
+    param: jnp.ndarray,
+    totc: jnp.ndarray,
+    cn_input: jnp.ndarray,
+    fract_root_input: jnp.ndarray,
+    fract_legacy_soc: jnp.ndarray,
+    tempr_c: jnp.ndarray,
+    precip_day: jnp.ndarray,
+    tempr_ampl: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Validated host-side wrapper for initialize_totc.
+
+    Mirrors the Fortran fatal input-range guards for callers providing scalar
+    host values. This wrapper is intentionally not tracing-friendly; use
+    initialize_totc directly inside jax.jit/jax.grad pipelines.
+    """
+    _require_unit_interval("fract_root_input", fract_root_input)
+    _require_unit_interval("fract_legacy_soc", fract_legacy_soc)
+    return initialize_totc(
+        param,
+        totc,
+        cn_input,
+        fract_root_input,
+        fract_legacy_soc,
+        tempr_c,
+        precip_day,
+        tempr_ampl,
+    )

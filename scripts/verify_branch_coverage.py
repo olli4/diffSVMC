@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -13,6 +14,8 @@ REGISTRY_PATH = ROOT / "packages" / "svmc-ref" / "branch-coverage.json"
 HARNESS_PATH = ROOT / "packages" / "svmc-ref" / "harness.f90"
 VENDOR_DIR = ROOT / "vendor" / "SVMC" / "src"
 FIXTURE_DIR = ROOT / "packages" / "svmc-ref" / "fixtures"
+JAX_TEST_DIR = ROOT / "packages" / "svmc-jax" / "tests"
+TS_TEST_DIR = ROOT / "packages" / "svmc-js" / "test"
 PORT_BRANCH_RE = re.compile(r"!\s*PORT-BRANCH:\s*([A-Za-z0-9_.-]+)")
 WAIVER_KIND_REQUIREMENTS = {
     "fixture-gap": ("next_action",),
@@ -25,6 +28,13 @@ WAIVER_KIND_REQUIREMENTS = {
 def fail(message: str) -> None:
     print(f"BRANCH AUDIT FAILED: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def tree_contains_text(root: Path, suffix: str, needle: str) -> bool:
+    for path in root.rglob(f"*{suffix}"):
+        if needle in path.read_text(encoding="utf-8"):
+            return True
+    return False
 
 
 def load_json(path: Path) -> object:
@@ -72,7 +82,7 @@ def penman_raw(case: dict[str, object]) -> float:
     return (slope * ae + rho * cp * ga * vpd) / (slope + gamma * (1.0 + ga / gs))
 
 
-def replay_steadystate_cue_iteration(inputs: dict[str, object]) -> tuple[bool, bool]:
+def replay_steadystate_cue_iteration(inputs: dict[str, object]) -> tuple[bool, bool, float]:
     """Exact replay of eval_steadystate_nitr CUE iteration from fixture inputs.
 
     Rebuilds the equilibrium state from the initialize_totc fixture inputs, then
@@ -80,9 +90,8 @@ def replay_steadystate_cue_iteration(inputs: dict[str, object]) -> tuple[bool, b
     or lower floor (capped < 0.1) was hit during any iteration.
 
     Returns:
-        (upper_hit, lower_hit): True if that clamp fired in any iteration.
+        (upper_hit, lower_hit, eqnitr): Clamp hits plus the replayed equilibrium N.
     """
-    import math
     import numpy as np_
 
     param = [float(v) for v in inputs["param"]]
@@ -174,7 +183,13 @@ def replay_steadystate_cue_iteration(inputs: dict[str, object]) -> tuple[bool, b
             lower_hit = True
         cue = max(capped_cue, cue_min)
 
-    return upper_hit, lower_hit
+    cupt_awen = (resp_yr - decomp_h) / (1.0 - cue)
+    nc_awen = (1.0 / cupt_awen) * (
+        nc_mb * cue * cupt_awen - nc_h_max * decomp_h + nitr_input_yr
+    )
+    eqnitr = sum_awen * nc_awen + nc_h_max * eqstate[4]
+
+    return upper_hit, lower_hit, float(eqnitr)
 
 
 def compute_fixture_coverage() -> dict[str, bool]:
@@ -379,6 +394,7 @@ def compute_fixture_coverage() -> dict[str, bool]:
     has_ss_cue_lower_false = False
     for case in init_totc_cases:
         inputs = case["inputs"]
+        output = case["output"]
         fract_root = float(inputs["fract_root_input"])
         fract_legacy = float(inputs["fract_legacy_soc"])
 
@@ -395,7 +411,18 @@ def compute_fixture_coverage() -> dict[str, bool]:
         # Exact replay of eval_steadystate_nitr CUE iteration.
         # Reconstruct the equilibrium state from the fixture inputs, then run
         # the 10-step CUE loop and check whether each clamp fires.
-        upper_hit, lower_hit = replay_steadystate_cue_iteration(inputs)
+        upper_hit, lower_hit, replayed_eqnitr = replay_steadystate_cue_iteration(inputs)
+        replayed_nstate = (
+            fract_legacy * float(inputs["totc"]) * 0.1
+            + (1.0 - fract_legacy) * replayed_eqnitr
+        )
+        expected_nstate = float(output["nstate"])
+        if not math.isclose(replayed_nstate, expected_nstate, rel_tol=1e-10, abs_tol=1e-12):
+            fail(
+                "initialize_totc replay mismatch: "
+                f"expected nstate={expected_nstate}, got {replayed_nstate} "
+                f"for inputs={inputs}"
+            )
         if upper_hit:
             has_ss_cue_upper_true = True
         else:
@@ -581,6 +608,17 @@ def main() -> None:
             if not isinstance(waiver, dict):
                 fail(f"registry entry {branch_id!r} is uncovered and must include an explicit waiver object")
             waiver_kind = validate_waiver(branch_id, waiver)
+            if waiver_kind == "fatal-path":
+                if entry.get("jax_tested"):
+                    require_fields(entry, ("jax_test",), branch_id)
+                    jax_test = entry.get("jax_test")
+                    if not isinstance(jax_test, str) or not tree_contains_text(JAX_TEST_DIR, ".py", jax_test):
+                        fail(f"branch {branch_id!r} marks jax_tested=true but no matching JAX test name was found")
+                if entry.get("ts_tested"):
+                    require_fields(entry, ("ts_test",), branch_id)
+                    ts_test = entry.get("ts_test")
+                    if not isinstance(ts_test, str) or not tree_contains_text(TS_TEST_DIR, ".ts", ts_test):
+                        fail(f"branch {branch_id!r} marks ts_tested=true but no matching TS test name was found")
             waiver_kind_counts[waiver_kind] += 1
 
     expected_summary = {
