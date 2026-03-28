@@ -5,7 +5,9 @@ for the JAX and TypeScript ports.
 
 ## Source of truth
 
-- `vendor/SVMC/src/` remains the authoritative upstream source tree.
+- `vendor/SVMC/src/` is this repo's maintained Fortran reference tree for
+  numerical behavior. It derives from `huitang-earth/SVMC` but may include
+  repo-local, non-numerical edits that support conservative porting.
 - `packages/svmc-ref/harness.f90` remains the authoritative harness entry point.
 - `packages/svmc-ref/src/` and `packages/svmc-ref/app/` are staged mirrors refreshed
   by `packages/svmc-ref/generate.py` so `fpm` can build the harness with a small,

@@ -7,7 +7,8 @@ and writes structured JSON fixture files for phydro, water, yasso, and
 allocation tests.
 
 The staged ``src/`` and ``app/`` trees under ``packages/svmc-ref`` exist so
-``fpm`` can build a small, reviewable mirror of the upstream Fortran sources.
+``fpm`` can build a small, reviewable mirror of the maintained Fortran reference
+sources in this repository.
 Behavioral edits belong in ``vendor/SVMC/src`` and ``packages/svmc-ref/``'s
 authoritative harness sources, not in the staged copies.
 """
@@ -78,8 +79,8 @@ def build_harness() -> None:
 
     print("Building Fortran harness …")
     staged_entries = load_staged_sources_manifest()
-    # Stage the exact subset of upstream sources required by the harness.
-    # The vendor tree remains the numerical source of truth.
+    # Stage the exact subset of maintained reference sources required by the harness.
+    # The vendor tree remains the in-repo numerical reference source of truth.
     for entry in staged_entries:
         source_path = HERE.parent.parent / entry["source"]
         target_path = HERE / entry["target"]

@@ -4,7 +4,7 @@ name: "SVMC Conservative Porting Workflow"
 ---
 # SVMC Conservative Porting Workflow
 
-- Treat the original SVMC Fortran implementation as the reference source of truth for numerical behavior.
+- Treat the maintained SVMC Fortran reference tree in `vendor/SVMC/` as the reference source of truth for numerical behavior. It derives from `huitang-earth/SVMC` but may include repo-local, non-numerical porting aids.
 - Work bottom-up from the leaf functions in DEPENDENCY-TREE.md and follow the phase order in PLAN.md unless the user explicitly reprioritizes.
 - Before porting a submodel, add or extend reference logging in `packages/svmc-ref` so the repo captures representative inputs and outputs from the original model. For wrappers, log at the wrapper boundary to catch integration issues.
 - Use the example input data included in the repo as the baseline reference run. For robust coverage, add targeted single and combined branch-triggering cases whenever a submodel has input-dependent logic.

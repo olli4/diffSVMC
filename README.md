@@ -80,12 +80,17 @@ python scripts/verify_branch_coverage.py
 python packages/svmc-ref/generate.py
 ```
 
-`packages/svmc-ref/generate.py` stages the exact upstream Fortran sources needed by
+`packages/svmc-ref/generate.py` stages the exact maintained reference Fortran sources needed by
 the harness into `packages/svmc-ref/src/` and `packages/svmc-ref/app/` before
 building with `fpm`. The authoritative source-to-stage mapping lives in
 `packages/svmc-ref/staged-sources.json`. Those staged copies are reviewable build
 inputs, not a second source of truth. Make behavioral edits in `vendor/SVMC/src/`
 or `packages/svmc-ref/harness.f90`, then rerun the generator.
+
+Within this repository, `vendor/SVMC/` is the maintained Fortran reference base for
+porting and fixture generation. It was seeded from the external
+`huitang-earth/SVMC` project and may carry repo-local, non-numerical modifications
+that support conservative porting work.
 
 ### Precision modes
 
@@ -105,9 +110,12 @@ Olli Niemitalo (Olli.Niemitalo@hamk.fi) — Supervision of AI coding agents.
 
 ## Third-party code
 
-The `vendor/SVMC/` directory contains the original SVMC Fortran model as a git submodule, copyright (c) 2023 huitang-earth, licensed under the MIT License. See [`vendor/SVMC/LICENSE`](vendor/SVMC/LICENSE).
+The `vendor/SVMC/` directory contains this repository's maintained SVMC Fortran
+reference tree as a git submodule. It derives from the external
+`huitang-earth/SVMC` project and remains MIT-licensed; see `vendor/SVMC/LICENSE`.
 
-The reference harness also stages selected upstream Fortran sources into
+The reference harness also stages selected Fortran sources from that maintained
+reference tree into
 `packages/svmc-ref/src/` for `fpm` builds. License provenance for those staged
 copies, including the vendored L-BFGS-B BSD-3-Clause text, is documented in
 `packages/svmc-ref/THIRD_PARTY_NOTICES.md`.

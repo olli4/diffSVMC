@@ -5,6 +5,10 @@ built with `fpm`. The staged copies preserve upstream notices. License provenanc
 recorded here so the staged tree is reviewable on its own. The complete staged file
 set is defined in `packages/svmc-ref/staged-sources.json`.
 
+Within this repository, `vendor/SVMC/` is a maintained reference tree derived from
+the external `huitang-earth/SVMC` project. The notices below distinguish between
+that in-repo reference base and the original external origins of third-party code.
+
 ## Upstream SVMC sources
 
 The following staged files come from `vendor/SVMC/src/` and inherit the upstream
@@ -18,7 +22,9 @@ SVMC project license:
 - `water_mod.f90`
 - `yasso.f90`
 
-Upstream project: `vendor/SVMC/`
+In-repo reference base: `vendor/SVMC/`
+
+External origin: `huitang-earth/SVMC`
 
 Upstream license: MIT, see `vendor/SVMC/LICENSE`.
 
