@@ -471,6 +471,117 @@ def compute_fixture_coverage() -> dict[str, bool]:
         "yasso.initialize_totc.fract_root_input_guard": has_fract_root_guard_true and has_fract_root_guard_false,
         "yasso.initialize_totc.fract_legacy_soc_guard": has_fract_legacy_guard_true and has_fract_legacy_guard_false,
     }
+
+    # --- Phase 4b: allocation ---
+    allocation = load_json(FIXTURE_DIR / "allocation.json")
+    assert isinstance(allocation, dict)
+
+    ah2_cases = list(allocation["alloc_hypothesis_2"])
+    inv_cases = list(allocation["invert_alloc"])
+
+    # Helper extractors for ah2 (only growth-phase cases for inner branches)
+    ah2_growth = [c for c in ah2_cases if int(c["inputs"]["pheno_stage"]) == 1]
+    ah2_dormancy = [c for c in ah2_cases if int(c["inputs"]["pheno_stage"]) == 2]
+
+    def _ah2_has(pred):
+        return any(pred(c["inputs"]) for c in ah2_growth)
+
+    # alloc_hypothesis_2 branches
+    coverage["allocation.alloc_hypothesis_2.pheno_growth"] = bool(ah2_growth) and bool(ah2_dormancy)
+    coverage["allocation.alloc_hypothesis_2.pheno_dormancy"] = bool(ah2_growth) and bool(ah2_dormancy)
+
+    coverage["allocation.alloc_hypothesis_2.grain_resp_oat"] = (
+        _ah2_has(lambda i: i["pft_type"] == "oat") and _ah2_has(lambda i: i["pft_type"] != "oat"))
+    coverage["allocation.alloc_hypothesis_2.grain_resp_zero"] = coverage["allocation.alloc_hypothesis_2.grain_resp_oat"]
+
+    coverage["allocation.alloc_hypothesis_2.litter_from_turnover"] = (
+        _ah2_has(lambda i: float(i["invert_option"]) == 0) and _ah2_has(lambda i: float(i["invert_option"]) != 0))
+    coverage["allocation.alloc_hypothesis_2.cleaf_from_alloc"] = coverage["allocation.alloc_hypothesis_2.litter_from_turnover"]
+
+    coverage["allocation.alloc_hypothesis_2.cgrain_update_oat"] = coverage["allocation.alloc_hypothesis_2.grain_resp_oat"]
+    coverage["allocation.alloc_hypothesis_2.cgrain_zero"] = coverage["allocation.alloc_hypothesis_2.grain_resp_oat"]
+
+    ah2_harvest = [c for c in ah2_growth if int(c["inputs"]["management_type"]) == 1]
+    ah2_non_harvest = [c for c in ah2_growth if int(c["inputs"]["management_type"]) != 1]
+    coverage["allocation.alloc_hypothesis_2.harvest"] = bool(ah2_harvest) and bool(ah2_non_harvest)
+
+    coverage["allocation.alloc_hypothesis_2.harvest_grass"] = (
+        any(c["inputs"]["pft_type"] == "grass" for c in ah2_harvest) and
+        any(c["inputs"]["pft_type"] == "oat" for c in ah2_harvest))
+    coverage["allocation.alloc_hypothesis_2.harvest_oat"] = coverage["allocation.alloc_hypothesis_2.harvest_grass"]
+
+    ah2_harvest_grass = [c for c in ah2_harvest if c["inputs"]["pft_type"] == "grass"]
+    coverage["allocation.alloc_hypothesis_2.harvest_grass_inv"] = (
+        any(float(c["inputs"]["invert_option"]) == 0 for c in ah2_harvest_grass) and
+        any(float(c["inputs"]["invert_option"]) != 0 for c in ah2_harvest_grass))
+
+    ah2_grazing = [c for c in ah2_growth if int(c["inputs"]["management_type"]) == 3]
+    ah2_non_grazing = [c for c in ah2_growth if int(c["inputs"]["management_type"]) != 3]
+    coverage["allocation.alloc_hypothesis_2.grazing"] = bool(ah2_grazing) and bool(ah2_non_grazing)
+
+    coverage["allocation.alloc_hypothesis_2.grazing_inv"] = (
+        any(float(c["inputs"]["invert_option"]) == 0 for c in ah2_grazing) and
+        any(float(c["inputs"]["invert_option"]) != 0 for c in ah2_grazing))
+
+    ah2_organic = [c for c in ah2_growth if int(c["inputs"]["management_type"]) == 4]
+    ah2_non_organic = [c for c in ah2_growth if int(c["inputs"]["management_type"]) != 4]
+    coverage["allocation.alloc_hypothesis_2.organic"] = bool(ah2_organic) and bool(ah2_non_organic)
+
+    # invert_alloc branches
+    inv_active = [c for c in inv_cases if int(c["inputs"]["pheno_stage"]) == 1]
+    inv_inactive = [c for c in inv_cases if int(c["inputs"]["pheno_stage"]) != 1]
+    coverage["allocation.invert_alloc.active"] = bool(inv_active) and bool(inv_inactive)
+
+    inv_opt1 = [c for c in inv_active if float(c["inputs"]["invert_option"]) == 1]
+    inv_opt2 = [c for c in inv_active if float(c["inputs"]["invert_option"]) == 2]
+    coverage["allocation.invert_alloc.option1"] = bool(inv_opt1) and bool(inv_opt2)
+    coverage["allocation.invert_alloc.option2"] = bool(inv_opt1) and bool(inv_opt2)
+
+    coverage["allocation.invert_alloc.option1_gpp_above"] = (
+        any(float(c["inputs"]["gpp_day"]) > 0.2e-8 for c in inv_opt1) and
+        any(float(c["inputs"]["gpp_day"]) <= 0.2e-8 for c in inv_opt1))
+
+    inv_opt1_harvest = [c for c in inv_opt1 if int(c["inputs"]["management_type"]) == 1]
+    inv_opt1_non_harvest = [c for c in inv_opt1 if int(c["inputs"]["management_type"]) != 1]
+    inv_opt1_grazing = [c for c in inv_opt1 if int(c["inputs"]["management_type"]) == 3]
+    inv_opt1_non_grazing = [c for c in inv_opt1 if int(c["inputs"]["management_type"]) != 3]
+    inv_opt1_no_mgmt = [c for c in inv_opt1 if int(c["inputs"]["management_type"]) not in (1, 3)]
+
+    coverage["allocation.invert_alloc.option1_harvest"] = bool(inv_opt1_harvest) and bool(inv_opt1_non_harvest)
+    coverage["allocation.invert_alloc.option1_harvest_grass"] = (
+        any(c["inputs"]["pft_type"] == "grass" for c in inv_opt1_harvest) and
+        any(c["inputs"]["pft_type"] != "grass" for c in inv_opt1_harvest))
+    coverage["allocation.invert_alloc.option1_harvest_other"] = coverage["allocation.invert_alloc.option1_harvest_grass"]
+    coverage["allocation.invert_alloc.option1_grazing"] = bool(inv_opt1_grazing) and bool(inv_opt1_non_grazing)
+    coverage["allocation.invert_alloc.option1_grazing_grass"] = (
+        any(c["inputs"]["pft_type"] == "grass" for c in inv_opt1_grazing) and
+        any(c["inputs"]["pft_type"] != "grass" for c in inv_opt1_grazing))
+    coverage["allocation.invert_alloc.option1_grazing_other"] = coverage["allocation.invert_alloc.option1_grazing_grass"]
+    coverage["allocation.invert_alloc.option1_no_mgmt"] = bool(inv_opt1_no_mgmt) and bool(inv_opt1_harvest + inv_opt1_grazing)
+
+    inv_opt2_above = [c for c in inv_opt2 if float(c["inputs"]["cleaf"]) > 0.00001]
+    inv_opt2_below = [c for c in inv_opt2 if float(c["inputs"]["cleaf"]) <= 0.00001]
+    coverage["allocation.invert_alloc.option2_cleaf_above"] = bool(inv_opt2_above) and bool(inv_opt2_below)
+    coverage["allocation.invert_alloc.option2_cleaf_below"] = coverage["allocation.invert_alloc.option2_cleaf_above"]
+
+    inv_opt2_harvest = [c for c in inv_opt2 if int(c["inputs"]["management_type"]) == 1]
+    inv_opt2_non_harvest = [c for c in inv_opt2 if int(c["inputs"]["management_type"]) != 1]
+    inv_opt2_grazing = [c for c in inv_opt2 if int(c["inputs"]["management_type"]) == 3]
+    inv_opt2_non_grazing = [c for c in inv_opt2 if int(c["inputs"]["management_type"]) != 3]
+    inv_opt2_no_mgmt = [c for c in inv_opt2 if int(c["inputs"]["management_type"]) not in (1, 3)]
+
+    coverage["allocation.invert_alloc.option2_harvest"] = bool(inv_opt2_harvest) and bool(inv_opt2_non_harvest)
+    coverage["allocation.invert_alloc.option2_harvest_grass"] = (
+        any(c["inputs"]["pft_type"] == "grass" for c in inv_opt2_harvest) and
+        any(c["inputs"]["pft_type"] != "grass" for c in inv_opt2_harvest))
+    coverage["allocation.invert_alloc.option2_harvest_other"] = coverage["allocation.invert_alloc.option2_harvest_grass"]
+    coverage["allocation.invert_alloc.option2_grazing"] = bool(inv_opt2_grazing) and bool(inv_opt2_non_grazing)
+    coverage["allocation.invert_alloc.option2_grazing_grass"] = (
+        any(c["inputs"]["pft_type"] == "grass" for c in inv_opt2_grazing) and
+        any(c["inputs"]["pft_type"] != "grass" for c in inv_opt2_grazing))
+    coverage["allocation.invert_alloc.option2_grazing_other"] = coverage["allocation.invert_alloc.option2_grazing_grass"]
+    coverage["allocation.invert_alloc.option2_no_mgmt"] = bool(inv_opt2_no_mgmt) and bool(inv_opt2_harvest + inv_opt2_grazing)
+
     return coverage
 
 
@@ -608,17 +719,16 @@ def main() -> None:
             if not isinstance(waiver, dict):
                 fail(f"registry entry {branch_id!r} is uncovered and must include an explicit waiver object")
             waiver_kind = validate_waiver(branch_id, waiver)
-            if waiver_kind == "fatal-path":
-                if entry.get("jax_tested"):
-                    require_fields(entry, ("jax_test",), branch_id)
-                    jax_test = entry.get("jax_test")
-                    if not isinstance(jax_test, str) or not tree_contains_text(JAX_TEST_DIR, ".py", jax_test):
-                        fail(f"branch {branch_id!r} marks jax_tested=true but no matching JAX test name was found")
-                if entry.get("ts_tested"):
-                    require_fields(entry, ("ts_test",), branch_id)
-                    ts_test = entry.get("ts_test")
-                    if not isinstance(ts_test, str) or not tree_contains_text(TS_TEST_DIR, ".ts", ts_test):
-                        fail(f"branch {branch_id!r} marks ts_tested=true but no matching TS test name was found")
+            if entry.get("jax_tested"):
+                require_fields(entry, ("jax_test",), branch_id)
+                jax_test = entry.get("jax_test")
+                if not isinstance(jax_test, str) or not tree_contains_text(JAX_TEST_DIR, ".py", jax_test):
+                    fail(f"branch {branch_id!r} marks jax_tested=true but no matching JAX test name was found")
+            if entry.get("ts_tested"):
+                require_fields(entry, ("ts_test",), branch_id)
+                ts_test = entry.get("ts_test")
+                if not isinstance(ts_test, str) or not tree_contains_text(TS_TEST_DIR, ".ts", ts_test):
+                    fail(f"branch {branch_id!r} marks ts_tested=true but no matching TS test name was found")
             waiver_kind_counts[waiver_kind] += 1
 
     expected_summary = {

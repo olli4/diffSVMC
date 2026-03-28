@@ -388,13 +388,364 @@
         "reason": "The true arm is an error stop that terminates the Fortran program, so fixtures cannot cover it. The JAX port preserves it in a checked host wrapper while keeping initialize_totc callback-free for pure JAX workflows; TS preserves it at the exported entry point.",
         "safe_test_strategy": "Exercise the port-side guard with dedicated invalid-input tests while keeping fixture playback on valid Fortran cases and leaving the pure JAX kernel free of host callbacks."
       }
+    },
+
+    {
+      "id": "allocation.alloc_hypothesis_2.pheno_growth",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pheno_stage == 1 -> growth phase with allocation & turnover",
+      "else_behavior": "pheno_dormancy: zero pools, dump to litter, reset to growth",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: cases with pheno=1. False: pheno=2 dormancy case."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.grain_resp_oat",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"oat\" -> nonzero grain growth respiration",
+      "else_behavior": "grain_resp_zero: grain respiration forced to zero",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: oat cases. False: grass cases."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.grain_resp_zero",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type!=\"oat\" -> grain respiration forced to zero",
+      "else_behavior": "grain_resp_oat: compute grain growth respiration",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "Else branch of grain_resp_oat. Both sides exercised."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.litter_from_turnover",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "invert_option==0 -> compute litter_cleaf from leaf turnover",
+      "else_behavior": "litter_cleaf passed through from input (inversion mode)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: inv=0 cases. False: inv=1 and inv=2 cases."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.cleaf_from_alloc",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "invert_option==0 -> update cleaf from carbon allocation",
+      "else_behavior": "cleaf unchanged (set by inversion upstream)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: inv=0. False: inv=1,2. Same pair as litter_from_turnover."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.cgrain_update_oat",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"oat\" -> update grain carbon pool",
+      "else_behavior": "cgrain_zero: grain carbon forced to zero",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: oat cases. False: grass cases."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.cgrain_zero",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type!=\"oat\" -> grain carbon forced to zero",
+      "else_behavior": "cgrain_update_oat: update grain pool from grain_fill",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "Else branch of cgrain_update_oat."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.harvest",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==1 -> harvest event",
+      "else_behavior": "grazing, organic, or no management",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest cases (grass and oat). False: all other mgmt types."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.harvest_grass",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"grass\" -> harvest grass (reduce leaf+stem proportionally)",
+      "else_behavior": "harvest_oat: reset all carbon pools",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest grass. False: harvest oat."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.harvest_grass_inv",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "invert_option==0 -> reduce cleaf during harvest",
+      "else_behavior": "cleaf unchanged during harvest (inversion mode)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest grass inv=0. False: harvest grass inv=1 case."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.harvest_oat",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"oat\" -> harvest oat (reset all carbon pools)",
+      "else_behavior": "harvest_grass: proportional deduction",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest oat case. False: harvest grass cases."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.grazing",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==3 -> grazing event",
+      "else_behavior": "organic or no management",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: grazing grass, grazing oat. False: all other mgmt types."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.grazing_inv",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "invert_option==0 -> reduce cleaf during grazing",
+      "else_behavior": "cleaf unchanged during grazing (inversion mode)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: grazing grass inv=0. False: grazing grass inv=1 fixture case exercises the skipped-cleaf path directly."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.organic",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==4 -> organic material input",
+      "else_behavior": "no management (fall through)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: organic case. False: no-mgmt cases."
+    },
+    {
+      "id": "allocation.alloc_hypothesis_2.pheno_dormancy",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pheno_stage==2 -> dormancy, zero pools, dump to litter",
+      "else_behavior": "pheno_growth: growth phase allocation",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: pheno=2 case. False: all pheno=1 cases. Paired with pheno_growth."
+    },
+    {
+      "id": "allocation.invert_alloc.active",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pheno_stage==1 -> active inversion computation",
+      "else_behavior": "no-op, all outputs unchanged (dormancy)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: all pheno=1 cases. False: pheno=2 dormancy case."
+    },
+    {
+      "id": "allocation.invert_alloc.option1",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "invert_option==1 -> derive cratio_leaf from delta_lai",
+      "else_behavior": "option2: derive turnover_cleaf",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: inv=1 cases. False: inv=2 cases."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_gpp_above",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "gpp_day > 0.2e-8 -> sufficient GPP for meaningful cratio_leaf",
+      "else_behavior": "cratio_leaf left unchanged (low GPP guard)",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: normal GPP cases. False: low GPP case."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_harvest",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==1 -> harvest management term in cratio_leaf",
+      "else_behavior": "grazing, organic, or no management",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: option1 harvest grass/oat. False: option1 grazing/no_mgmt."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_harvest_grass",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"grass\" -> harvest grass management term",
+      "else_behavior": "option1_harvest_other: no management term for other pft",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest grass. False: harvest oat."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_harvest_other",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type!=\"grass\" -> no harvest management term",
+      "else_behavior": "option1_harvest_grass: apply harvest grass management term",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest oat. False: harvest grass."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_grazing",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==3 -> grazing management term in cratio_leaf",
+      "else_behavior": "option1_no_mgmt or option1_organic: no grazing term",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: option1 grazing grass/oat. False: option1 harvest/no_mgmt."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_grazing_grass",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"grass\" -> grazing grass management term",
+      "else_behavior": "option1_grazing_other: no management term for other pft",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: grazing grass. False: grazing oat."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_grazing_other",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type!=\"grass\" -> no grazing management term",
+      "else_behavior": "option1_grazing_grass: apply grazing grass management term",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: grazing oat. False: grazing grass."
+    },
+    {
+      "id": "allocation.invert_alloc.option1_no_mgmt",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type not 1 or 3 -> no management term in cratio_leaf",
+      "else_behavior": "harvest or grazing management term applied",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: no-mgmt and organic cases. False: harvest/grazing cases."
+    },
+    {
+      "id": "allocation.invert_alloc.option2",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "invert_option==2 -> derive turnover_cleaf from delta_lai",
+      "else_behavior": "option1: derive cratio_leaf",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: inv=2 cases. False: inv=1 cases."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_cleaf_above",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "cleaf > 0.00001 -> sufficient cleaf for inversion",
+      "else_behavior": "option2_cleaf_below: set turnover_cleaf=0",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: normal cleaf cases. False: low-cleaf threshold case."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_harvest",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==1 -> harvest management term in turnover_cleaf",
+      "else_behavior": "grazing, organic, or no management",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: option2 harvest grass/oat. False: option2 grazing/no_mgmt."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_harvest_grass",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"grass\" -> harvest grass management term in turnover",
+      "else_behavior": "option2_harvest_other: no management term for other pft",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest grass. False: harvest oat."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_harvest_other",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type!=\"grass\" -> no harvest management term in turnover",
+      "else_behavior": "option2_harvest_grass: apply harvest grass management term",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: harvest oat. False: harvest grass."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_grazing",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type==3 -> grazing management term in turnover_cleaf",
+      "else_behavior": "option2_no_mgmt or option2_organic: no grazing term",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: option2 grazing grass/oat. False: option2 harvest/no_mgmt."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_grazing_grass",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type==\"grass\" -> grazing grass management term in turnover",
+      "else_behavior": "option2_grazing_other: no management term for other pft",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: grazing grass. False: grazing oat."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_grazing_other",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "pft_type!=\"grass\" -> no grazing management term in turnover",
+      "else_behavior": "option2_grazing_grass: apply grazing grass management term",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: grazing oat. False: grazing grass."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_no_mgmt",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "management_type not 1 or 3 -> no management term in turnover_cleaf",
+      "else_behavior": "harvest or grazing management term applied",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: no-mgmt and low-cleaf cases. False: harvest/grazing cases."
+    },
+    {
+      "id": "allocation.invert_alloc.option2_cleaf_below",
+      "file": "vendor/SVMC/src/allocation.f90",
+      "condition": "cleaf <= 0.00001 -> turnover_cleaf set to 0",
+      "else_behavior": "option2_cleaf_above: compute turnover_cleaf from inversion",
+      "fixture_both_sides": true,
+      "jax_tested": true,
+      "ts_tested": false,
+      "notes": "True: low-cleaf threshold case. False: normal cleaf cases. Paired with option2_cleaf_above."
     }
   ],
   "summary": {
-    "total_branches": 32,
-    "both_sides_covered": 23,
+    "total_branches": 67,
+    "both_sides_covered": 58,
     "single_side_only": 9,
     "waived_uncovered": 9,
-    "coverage_pct": "72% (23/32)"
+    "coverage_pct": "87% (58/67)"
   }
 }

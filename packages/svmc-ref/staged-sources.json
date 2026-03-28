@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "description": "Authoritative source-to-stage mapping for the svmc-ref fpm build.",
+  "entries": [
+    {
+      "source": "vendor/SVMC/src/readctrl_mod.f90",
+      "target": "src/readctrl_mod.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/readvegpara_mod.f90",
+      "target": "src/readvegpara_mod.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/readsoilpara_mod.f90",
+      "target": "src/readsoilpara_mod.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/phydro_mod.f90",
+      "target": "src/phydro_mod.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/water_mod.f90",
+      "target": "src/water_mod.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/yasso.f90",
+      "target": "src/yasso.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/yassofortran20.f90",
+      "target": "src/yassofortran20.f90",
+      "origin": "Yasso20 via SVMC",
+      "license": "GPL-3.0-or-later"
+    },
+    {
+      "source": "vendor/SVMC/src/allocation.f90",
+      "target": "src/allocation.f90",
+      "origin": "SVMC",
+      "license": "MIT"
+    },
+    {
+      "source": "vendor/SVMC/src/blas.f",
+      "target": "src/blas.f",
+      "origin": "L-BFGS-B via SVMC",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "source": "vendor/SVMC/src/linpack.f",
+      "target": "src/linpack.f",
+      "origin": "L-BFGS-B via SVMC",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "source": "vendor/SVMC/src/lbfgsb.f",
+      "target": "src/lbfgsb.f",
+      "origin": "L-BFGS-B via SVMC",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "source": "vendor/SVMC/src/timer.f",
+      "target": "src/timer.f",
+      "origin": "L-BFGS-B via SVMC",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "source": "packages/svmc-ref/harness.f90",
+      "target": "app/harness.f90",
+      "origin": "svmc-ref harness",
+      "license": "MIT"
+    }
+  ]
+}

@@ -105,7 +105,7 @@ being composed into higher-level models.
 | 13| `exponential_smooth_met`       | met_daily, met_rolling, ind      | met_rolling          |
 | 14| `inputs_to_fractions`          | leaf_c, root_c, sol, comp        | AWENH fractions      |
 
-### Phase 2 — Mid-level functions
+### Phase 2 — Intermediate P-Hydro assemblies
 
 | # | Function                       | Depends on (from Phase 1)               |
 |---|--------------------------------|-----------------------------------------|
@@ -113,8 +113,10 @@ being composed into higher-level models.
 | 2 | `calc_gs`                      | scale_conductivity                      |
 | 3 | `calc_assim_light_limited`     | quadratic                               |
 | 4 | `fn_profit`                    | calc_gs, calc_assim_light_limited       |
+| 5 | `optimise_midterm_multi`       | fn_profit                               |
+| 6 | `pmodel_hydraulics_numerical`  | calc_kmm, gammastar, ftemp_kphio, viscosity_h2o, density_h2o, optimise_midterm_multi |
 
-### Phase 3 — High-level submodels
+### Phase 3 — SpaFHy canopy & soil water balance
 
 | # | Submodel                         | Depends on                              |
 |---|----------------------------------|-----------------------------------------|
@@ -122,13 +124,16 @@ being composed into higher-level models.
 | 2 | `ground_evaporation`             | penman_monteith                         |
 | 3 | `canopy_water_flux`              | aerodynamics, canopy_water_snow, ground_evaporation |
 | 4 | `soil_water`                     | soil_water_retention_curve, soil_hydraulic_conductivity |
-| 5 | `optimise_midterm_multi`         | fn_profit (L-BFGS-B optimizer)          |
-| 6 | `pmodel_hydraulics_numerical`    | calc_kmm, gammastar, ftemp_kphio, viscosity_h2o, density_h2o, optimise_midterm_multi |
-| 7 | `alloc_hypothesis_2` / `invert_alloc` | standalone (uses GPP, leaf dark resp.) |
-| 8 | `wrapper_yasso_decompose`        | Yasso20 core (decompose)                |
-| 9 | `wrapper_yasso_annual`           | Yasso20 core (mod5c20)                  |
 
-### Phase 4 — Full SVMC integration
+### Phase 4 — Carbon allocation & Yasso20 decomposition
+
+| # | Submodel                         | Depends on                              |
+|---|----------------------------------|-----------------------------------------|
+| 1 | `alloc_hypothesis_2` / `invert_alloc` | standalone (uses GPP, leaf dark resp.) |
+| 2 | `wrapper_yasso_decompose`        | Yasso20 core (decompose)                |
+| 3 | `wrapper_yasso_annual`           | Yasso20 core (mod5c20)                  |
+
+### Phase 5 — Full SVMC integration
 
 Compose all submodels into the hourly + daily + yearly loop.
 

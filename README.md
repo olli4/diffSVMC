@@ -10,8 +10,8 @@ The goal is a numerically faithful, fully differentiable reimplementation suitab
 
 ```
 packages/
-  svmc-ref/    Fortran reference test harness (driver program that exercises
-               original routines), fixture generation, branch audit
+  svmc-ref/    Fortran reference harness, fixture generation, branch audit,
+               and the fpm-staged source mirror used for reference builds
   svmc-jax/    JAX reimplementation (float64, autodiff, invariant tests)
   svmc-js/     TypeScript reimplementation (float32/float64, browser-ready)
 vendor/
@@ -54,7 +54,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 
 - Node.js ≥ 20, pnpm
 - Python ≥ 3.11, pip
-- gfortran (for fixture regeneration only)
+- gfortran
+- fpm (for fixture regeneration)
+- NetCDF C and Fortran development libraries, with `nf-config` on `PATH` when
+  compiler include paths are not already configured
 
 ### Install and test
 
@@ -70,6 +73,19 @@ pnpm vitest run
 # Branch coverage audit
 python scripts/verify_branch_coverage.py
 ```
+
+### Regenerate reference fixtures
+
+```bash
+python packages/svmc-ref/generate.py
+```
+
+`packages/svmc-ref/generate.py` stages the exact upstream Fortran sources needed by
+the harness into `packages/svmc-ref/src/` and `packages/svmc-ref/app/` before
+building with `fpm`. The authoritative source-to-stage mapping lives in
+`packages/svmc-ref/staged-sources.json`. Those staged copies are reviewable build
+inputs, not a second source of truth. Make behavioral edits in `vendor/SVMC/src/`
+or `packages/svmc-ref/harness.f90`, then rerun the generator.
 
 ### Precision modes
 
@@ -90,6 +106,11 @@ Olli Niemitalo (Olli.Niemitalo@hamk.fi) — Supervision of AI coding agents.
 ## Third-party code
 
 The `vendor/SVMC/` directory contains the original SVMC Fortran model as a git submodule, copyright (c) 2023 huitang-earth, licensed under the MIT License. See [`vendor/SVMC/LICENSE`](vendor/SVMC/LICENSE).
+
+The reference harness also stages selected upstream Fortran sources into
+`packages/svmc-ref/src/` for `fpm` builds. License provenance for those staged
+copies, including the vendored L-BFGS-B BSD-3-Clause text, is documented in
+`packages/svmc-ref/THIRD_PARTY_NOTICES.md`.
 
 ## License
 

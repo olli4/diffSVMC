@@ -1,0 +1,43 @@
+# fpm project for the SVMC reference harness.
+#
+# Replaces the manual Makefile that required hand-maintained dependency
+# ordering.  fpm resolves Fortran USE dependencies automatically,
+# which becomes critical as allocation and other modules are added.
+#
+# Build:  fpm build
+# Run:    fpm run
+# Clean:  fpm clean (removes build/ directory)
+#
+# `generate.py` stages the exact harness inputs declared in
+# `packages/svmc-ref/staged-sources.json` into `src/` and `app/` before
+# invoking fpm. Edit `vendor/SVMC/src` or `packages/svmc-ref/harness.f90`
+# instead of editing the staged copies directly.
+
+name = "svmc-ref"
+version = "0.0.1"
+
+[build]
+auto-executables = false
+# Must match upstream SVMC flags — especially -freal-4-real-8
+# which promotes all real(4) to real(8) for consistent double precision.
+link = ["netcdff", "netcdf"]
+external-modules = ["netcdf"]
+
+[library]
+# Staged mirror refreshed by packages/svmc-ref/generate.py.
+source-dir = "src"
+
+[[executable]]
+name = "harness"
+# Staged mirror refreshed by packages/svmc-ref/generate.py.
+source-dir = "app"
+main = "harness.f90"
+
+[fortran]
+implicit-typing = true
+implicit-external = true
+source-form = "default"
+
+[preprocess]
+[preprocess.cpp]
+macros = ["USE_NCF"]
