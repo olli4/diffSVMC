@@ -2,8 +2,8 @@
 # Build the SVMCwebr WASM R package locally using Docker,
 # producing a CRAN-like repo in website/public/.
 #
-# Docker outputs to tmp/webr-staging/ first (to avoid root-owned
-# files landing directly in website/public/), then copies across.
+# Docker outputs to tmp/webr-staging/ first while running as the
+# current host uid:gid, then copies across to website/public/.
 #
 # If website/public/{bin,src} are root-owned from a previous build,
 # run the one-time fix first:  sudo website/install-webr.sh
@@ -21,6 +21,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAGING="$REPO_ROOT/tmp/webr-staging"
 OUT="$REPO_ROOT/website/public"
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
 
 # If the CRAN repo already exists in public/, skip rebuild.
 if [[ -f "$OUT/bin/emscripten/contrib/4.5/PACKAGES" ]]; then
@@ -30,10 +32,14 @@ if [[ -f "$OUT/bin/emscripten/contrib/4.5/PACKAGES" ]]; then
 fi
 
 # ---- Check for root-owned leftovers before we start the slow Docker build ----
-for d in "$OUT/bin" "$OUT/src"; do
+for d in "$STAGING" "$OUT/bin" "$OUT/src"; do
   if [[ -d "$d" ]] && [[ "$(stat -c %u "$d")" != "$(id -u)" ]]; then
     echo "ERROR: $d is not owned by you (owned by uid $(stat -c %u "$d"))."
-    echo "One-time fix:  sudo website/install-webr.sh"
+    if [[ "$d" == "$STAGING" ]]; then
+      echo "One-time fix:  sudo chown -R $HOST_UID:$HOST_GID tmp/webr-staging"
+    else
+      echo "One-time fix:  sudo website/install-webr.sh"
+    fi
     exit 1
   fi
 done
@@ -60,6 +66,8 @@ rm -f "$REPO_ROOT"/packages/svmc-webr/src/*.o \
 
 echo "Building SVMCwebr WASM package via Docker…"
 $DOCKER run --rm \
+  --user "$HOST_UID:$HOST_GID" \
+  -e HOME=/tmp \
   -v "$REPO_ROOT":/work \
   -w /work \
   ghcr.io/r-wasm/webr:main \
@@ -68,12 +76,6 @@ $DOCKER run --rm \
     Rscript -e "rwasm::add_pkg(\"local::packages/svmc-webr\", repo_dir = \"/tmp/repo\")"
     cp -r /tmp/repo/* /work/tmp/webr-staging/
   '
-
-# Fix ownership — Docker may have written as root.
-if [[ -n "$(find "$STAGING" -not -user "$(id -u)" 2>/dev/null | head -1)" ]]; then
-  echo "Fixing ownership of staging directory…"
-  sudo chown -R "$(id -u):$(id -g)" "$STAGING"
-fi
 
 # Copy from staging to website/public/ (user-owned after one-time fix).
 cp -r "$STAGING"/* "$OUT"/

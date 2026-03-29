@@ -135,9 +135,14 @@ run the one-time ownership fix first:
 sudo website/install-webr.sh
 ```
 
-The build script (`website/build-webr.sh`) stages Docker output through
-`tmp/webr-staging/` and copies to `website/public/`, so only the one-time
-fix above ever needs `sudo`.
+The build script (`website/build-webr.sh`) now runs the Docker container as
+your current uid:gid, stages output through `tmp/webr-staging/`, and then
+copies to `website/public/`. Normal builds should therefore stay user-owned.
+The remaining reasons you might still need `sudo` are:
+
+- your host Docker setup requires `sudo docker`
+- `website/public/{bin,src}` or `tmp/webr-staging/` are already root-owned
+  from an older build and need a one-time ownership fix
 
 For local development without Docker, you can seed the CRAN repo from a
 CI artifact:

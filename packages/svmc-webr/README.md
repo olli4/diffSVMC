@@ -87,7 +87,10 @@ run the one-time ownership fix first:
 sudo website/install-webr.sh
 ```
 
-The script auto-detects whether Docker needs `sudo`. If Docker is not
+The build script now runs the Docker container as your current uid:gid, so
+normal builds should write user-owned files. The remaining reasons you might
+still need `sudo` are host Docker access or reclaiming old root-owned build
+artifacts. The script auto-detects whether Docker needs `sudo`. If Docker is not
 available, you can seed `website/public/` from a CI artifact instead:
 
 ```bash
