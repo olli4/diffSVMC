@@ -397,7 +397,7 @@
       "else_behavior": "pheno_dormancy: zero pools, dump to litter, reset to growth",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: cases with pheno=1. False: pheno=2 dormancy case."
     },
     {
@@ -407,7 +407,7 @@
       "else_behavior": "grain_resp_zero: grain respiration forced to zero",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: oat cases. False: grass cases."
     },
     {
@@ -417,7 +417,7 @@
       "else_behavior": "grain_resp_oat: compute grain growth respiration",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "Else branch of grain_resp_oat. Both sides exercised."
     },
     {
@@ -427,7 +427,7 @@
       "else_behavior": "litter_cleaf passed through from input (inversion mode)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: inv=0 cases. False: inv=1 and inv=2 cases."
     },
     {
@@ -437,7 +437,7 @@
       "else_behavior": "cleaf unchanged (set by inversion upstream)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: inv=0. False: inv=1,2. Same pair as litter_from_turnover."
     },
     {
@@ -447,7 +447,7 @@
       "else_behavior": "cgrain_zero: grain carbon forced to zero",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: oat cases. False: grass cases."
     },
     {
@@ -457,7 +457,7 @@
       "else_behavior": "cgrain_update_oat: update grain pool from grain_fill",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "Else branch of cgrain_update_oat."
     },
     {
@@ -467,7 +467,7 @@
       "else_behavior": "grazing, organic, or no management",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest cases (grass and oat). False: all other mgmt types."
     },
     {
@@ -477,7 +477,7 @@
       "else_behavior": "harvest_oat: reset all carbon pools",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest grass. False: harvest oat."
     },
     {
@@ -487,7 +487,7 @@
       "else_behavior": "cleaf unchanged during harvest (inversion mode)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest grass inv=0. False: harvest grass inv=1 case."
     },
     {
@@ -497,7 +497,7 @@
       "else_behavior": "harvest_grass: proportional deduction",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest oat case. False: harvest grass cases."
     },
     {
@@ -507,7 +507,7 @@
       "else_behavior": "organic or no management",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: grazing grass, grazing oat. False: all other mgmt types."
     },
     {
@@ -517,7 +517,7 @@
       "else_behavior": "cleaf unchanged during grazing (inversion mode)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: grazing grass inv=0. False: grazing grass inv=1 fixture case exercises the skipped-cleaf path directly."
     },
     {
@@ -527,7 +527,7 @@
       "else_behavior": "no management (fall through)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: organic case. False: no-mgmt cases."
     },
     {
@@ -537,7 +537,7 @@
       "else_behavior": "pheno_growth: growth phase allocation",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: pheno=2 case. False: all pheno=1 cases. Paired with pheno_growth."
     },
     {
@@ -547,7 +547,7 @@
       "else_behavior": "no-op, all outputs unchanged (dormancy)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: all pheno=1 cases. False: pheno=2 dormancy case."
     },
     {
@@ -557,7 +557,7 @@
       "else_behavior": "option2: derive turnover_cleaf",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: inv=1 cases. False: inv=2 cases."
     },
     {
@@ -567,7 +567,7 @@
       "else_behavior": "cratio_leaf left unchanged (low GPP guard)",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: normal GPP cases. False: low GPP case."
     },
     {
@@ -577,7 +577,7 @@
       "else_behavior": "grazing, organic, or no management",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: option1 harvest grass/oat. False: option1 grazing/no_mgmt."
     },
     {
@@ -587,7 +587,7 @@
       "else_behavior": "option1_harvest_other: no management term for other pft",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest grass. False: harvest oat."
     },
     {
@@ -597,7 +597,7 @@
       "else_behavior": "option1_harvest_grass: apply harvest grass management term",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest oat. False: harvest grass."
     },
     {
@@ -607,7 +607,7 @@
       "else_behavior": "option1_no_mgmt or option1_organic: no grazing term",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: option1 grazing grass/oat. False: option1 harvest/no_mgmt."
     },
     {
@@ -617,7 +617,7 @@
       "else_behavior": "option1_grazing_other: no management term for other pft",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: grazing grass. False: grazing oat."
     },
     {
@@ -627,7 +627,7 @@
       "else_behavior": "option1_grazing_grass: apply grazing grass management term",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: grazing oat. False: grazing grass."
     },
     {
@@ -637,7 +637,7 @@
       "else_behavior": "harvest or grazing management term applied",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: no-mgmt and organic cases. False: harvest/grazing cases."
     },
     {
@@ -647,7 +647,7 @@
       "else_behavior": "option1: derive cratio_leaf",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: inv=2 cases. False: inv=1 cases."
     },
     {
@@ -657,7 +657,7 @@
       "else_behavior": "option2_cleaf_below: set turnover_cleaf=0",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: normal cleaf cases. False: low-cleaf threshold case."
     },
     {
@@ -667,7 +667,7 @@
       "else_behavior": "grazing, organic, or no management",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: option2 harvest grass/oat. False: option2 grazing/no_mgmt."
     },
     {
@@ -677,7 +677,7 @@
       "else_behavior": "option2_harvest_other: no management term for other pft",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest grass. False: harvest oat."
     },
     {
@@ -687,7 +687,7 @@
       "else_behavior": "option2_harvest_grass: apply harvest grass management term",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: harvest oat. False: harvest grass."
     },
     {
@@ -697,7 +697,7 @@
       "else_behavior": "option2_no_mgmt or option2_organic: no grazing term",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: option2 grazing grass/oat. False: option2 harvest/no_mgmt."
     },
     {
@@ -707,7 +707,7 @@
       "else_behavior": "option2_grazing_other: no management term for other pft",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: grazing grass. False: grazing oat."
     },
     {
@@ -717,7 +717,7 @@
       "else_behavior": "option2_grazing_grass: apply grazing grass management term",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: grazing oat. False: grazing grass."
     },
     {
@@ -727,7 +727,7 @@
       "else_behavior": "harvest or grazing management term applied",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: no-mgmt and low-cleaf cases. False: harvest/grazing cases."
     },
     {
@@ -737,7 +737,7 @@
       "else_behavior": "option2_cleaf_above: compute turnover_cleaf from inversion",
       "fixture_both_sides": true,
       "jax_tested": true,
-      "ts_tested": false,
+      "ts_tested": true,
       "notes": "True: low-cleaf threshold case. False: normal cleaf cases. Paired with option2_cleaf_above."
     }
   ],

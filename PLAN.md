@@ -125,6 +125,22 @@ Move to canopy/soil hydrology processes which manage the local water states.
 - **TS precision switch**: `svmc-js` array creation is routed through a project-local precision wrapper. Default mode is `float32`; `SVMC_JS_DTYPE=float64` enables higher-accuracy execution without changing call sites. The dtype is fixed at module-load time rather than mutated globally at runtime.
 - **TS float32 tolerances**: All TS test tolerances are derived from machine epsilon (`baseNp.finfo(dtype).eps`) scaled by each function's critical-path operation depth with a ≥2× safety factor.  Near-zero fields (mbe, Kh) use an `atol` noise floor instead of loose relative tolerance — `128 * eps` for mass-balance sums, `eps` for Mualem-formula underflow.  The `sublim_vs_evap` branch-audit evaluator additionally requires `LAI > eps` to match the enclosing Fortran guard.
 
+## Lessons from Website End-to-End Integration
+
+The Qvidja reference replay demo (`website/index.html`) running the full SVMC via WebR/Fortran in the browser exposed several classes of integration bugs that leaf-level and submodel-level tests missed entirely. These lessons directly inform Phase 4 and 5 priorities:
+
+1. **Wrapper-boundary fidelity outweighs leaf parity.** ET unit conversion (mm/s → mm/hr), management array forwarding, and `opt_hypothesis` propagation were all broken at compositional boundaries, despite every leaf function passing its fixtures. Phase 4-5 must treat wrapper-boundary contracts as first-class test targets.
+
+2. **Real reference replay >> synthetic drivers.** The Qvidja 1697-day replay (ERA5-Land forcing, Sentinel-2 LAI, management events) caught initialization and state-propagation issues that no single-step synthetic fixture ever triggered. A short (7-day) integration fixture from the real replay should be cut and added to `packages/svmc-ref/fixtures/` before Phase 4 closes.
+
+3. **End-to-end derived metrics catch drift that submodel tests miss.** Annualized GPP/NEE/ET and final SOC were the signals that revealed silent Yasso initialization failures and wrong unit conversions. Phase 5 integration tests must assert summary-level derived metrics in addition to per-timestep tolerances.
+
+4. **Status codes, not silent returns.** YASSO `initialize_totc` originally silently returned on invalid `fract_root_input` / `fract_legacy_soc`, making debugging impossible. The WebR wrapper now propagates integer status codes (0=ok, 1-4=specific failures). Both JAX and TS ports should adopt explicit failure signaling at integration boundaries rather than silent pass-through.
+
+5. **Initialization climate must come from forcing data.** The `svmc-webr` adapter previously hardcoded `tempr_c=5`, `tempr_ampl=20`, `precip_day=1.8` for YASSO init. The working demo now derives these from the first year of actual forcing. Phase 5's init wiring must match this pattern.
+
+6. **Branch audit should extend to wrapper boundaries.** The current 24-branch audit covers vendor-side submodel branches but not wrapper-only logic (status propagation, management forwarding, PFT validation). Either expand `branch-coverage.json` to cover wrapper branches or explicitly document that wrapper behavior is validated by integration tests only.
+
 ## Phase 4: Carbon Allocation & Yasso20 Decomposition
 
 Port the long-term, daily/yearly loop processes.
@@ -137,39 +153,53 @@ Quality bar carried over from Phase 3:
 - Any TS tolerance for long-horizon rollouts must be backed by measured drift and epsilon-scaled accumulation analysis, not a blanket per-phase relaxation.
 
 - **Fortran Build Modernization (`fpm`/`CMake`)**: At this point, integrating the 20+ Yasso and Allocation sub-modules inside the Fortran harness will break the manual `Makefile` dependency ordering. Before writing Yasso harness logs, scrap the `Makefile` and adopt `fpm` (Fortran Package Manager) or `CMake` for reliable automated dependency parsing. Doing this early in Phase 4 defers scope creep but prevents a bottleneck precisely when the Fortran inclusion graph becomes intractable.
-- **Direct-interface adapter audit (`svmc-webr`)**: When Phase 4 reaches `yasso.initialize_totc`, revisit the current `packages/svmc-webr` adapter shortcuts before treating browser SOC behavior as meaningful reference behavior. In particular, replace the stubbed Yasso initialization climate defaults (`tempr_c=5`, `tempr_ampl=20`, `precip_day=1.8`) with site/forcing-backed values or explicit adapter inputs, then add wrapper-boundary fixtures for `wrapper_yasso_initialize_totc` and daily decomposition so initialization drift is caught separately from the downstream JAX/TS ports.
-- Allocation modules: `invert_alloc` and `alloc_hypothesis_2`.
-- Yasso20 Soil Carbon:
-  - `yasso.initialize_totc` (Setup routines).
-  - `yasso.decompose` (Daily decomposition).
-  - `yasso20.mod5c20` (Yearly spin-up calculations; matrix exponentials).
-  - **`matrixexp` — Taylor-based matrix exponential (downstream-owned)**:
+- **Direct-interface adapter audit (`svmc-webr`)**: ✅ Partially addressed. The WebR adapter now propagates `opt_hypothesis`, validates `pft_type_code`, forwards management arrays, and returns YASSO status codes. Remaining: replace the hardcoded Yasso initialization climate defaults with forcing-derived values (see Lesson 5 above) and add wrapper-boundary fixtures for `wrapper_yasso_initialize_totc` and daily decomposition so initialization drift is caught separately from the downstream JAX/TS ports.
+- Allocation modules: `invert_alloc` and `alloc_hypothesis_2`. ✅ JAX ported, fixture-tested, 31 allocation branches tracked. ⬜ TS port pending.
+- Yasso20 Soil Carbon: ✅ All submodels ported to both JAX and TS, fixture-tested.
+  - `yasso.initialize_totc` (Setup routines). ✅
+  - `yasso.decompose` (Daily decomposition). ✅
+  - `yasso20.mod5c20` (Yearly spin-up calculations; matrix exponentials). ✅
+  - **`matrixexp` — Taylor-based matrix exponential (downstream-owned)**: ✅ Ported and validated.
     The Fortran Yasso20 code (`vendor/SVMC/src/yassofortran20.f90` L163–202) uses a custom 10-term Taylor scaling-and-squaring matrix exponential for 5×5 AWENH matrices. Per the `jax-js-nonconsuming` team's plan, the Taylor path is downstream-owned (`diffSVMC` implements it using existing public primitives) while the public `scipyLinalg.expm` Padé path remains a separate upstream concern.
     - **Algorithm**: (1) Frobenius norm via `sqrt(sum(A²))`; (2) find scaling exponent `j` such that `normiter = 2^j > ‖A‖_F`, with `j >= 1`; (3) `C = A/normiter`; (4) accumulate `B = I + C + C²/2! + … + C¹⁰/10!` (10 fixed terms); (5) square `B` exactly `j` times.
     - **JAX**: Use `jnp.matmul`, `jnp.eye`, `jax.lax.fori_loop` for both Taylor accumulation and squaring. Dynamic loop bounds are supported here, so the squaring loop can follow the exact Fortran exponent without a masked upper bound.
     - **TS**: Use `np.matmul`, `np.eye`, `lax.foriLoop` — all already public in `@hamk-uas/jax-js-nonconsuming`. Frobenius norm composed from `sum`, `sqrt`, `pow`. Because `lax.foriLoop` needs a static bound in the current TS stack, this port uses an explicit bounded masked-squaring policy (`MAX_J = 20`) and tests that current reference cases stay within that envelope.
     - **Validation status**: bootstrap validation should combine synthetic invariants (`exp(0)=I`, diagonal matrices) with matrices produced by the real `mod5c20` coefficient-matrix path. Full wrapper-boundary yearly Yasso fixtures remain pending.
 
+### Phase 4 Remaining Work
+
+1. **Port `invert_alloc` and `alloc_hypothesis_2` to TypeScript** (`packages/svmc-js/src/allocation/`). Use the same `using`/nonconsuming patterns as YASSO TS modules.
+2. **Add TS allocation fixture-playback tests** exercising all 13 `alloc_hypothesis_2` + 14 `invert_alloc` reference cases with `checkLeaks`.
+3. **Update `branch-coverage.json`** to set `ts_tested: true` on all 31 allocation branches.
+4. **Create a 7-day Qvidja integration fixture** from the reference replay: extract a short multi-regime slice, run it through the Fortran harness, capture hourly/daily outputs plus derived summaries (annualized GPP, NEE, ET, final SOC, peak LAI). Add to `packages/svmc-ref/fixtures/integration.json`.
+
 ## Phase 5: Main SVMC Integration Loop
 
 Combine the differentiable submodels into the top-level time-step loops.
 
-Quality bar carried over from Phase 3:
+Quality bar carried over from Phase 3 and the website integration lessons:
 
 - Preserve branch-audit discipline at integration level: when a wrapper introduces new conditional behavior, add `PORT-BRANCH` tags and evaluator logic that matches the real guard conditions exactly.
 - Validate coupled rollouts with multi-step fixtures that force regime switches, not just steady-state weather segments.
 - Keep known upstream accounting artifacts separate from true port regressions so integration tests do not normalize new bugs.
+- Assert derived summary metrics (annualized GPP/NEE/ET, final SOC) in addition to per-timestep tolerances, because the website replay showed these catch drift that step-level tests miss (Lesson 3).
+- Derive YASSO initialization climate from forcing data, not hardcoded defaults (Lesson 5). The Fortran wrapper `exponential_smooth_met` already implements the rolling smoothing; the JAX/TS init wiring must reproduce this.
+- Integration tests must trigger management regime switches (harvest, grazing, organic) within the rollout window to exercise the allocation↔YASSO composition under real conditions (Lesson 2).
 
 - **I/O Boundary Rule**: Keep namelist parsing and netCDF reading in a thin adapter layer separate from the computational core. Submodel functions must accept plain arrays/scalars so they remain testable and composable outside the original SVMC file conventions.
-- **Adapter hardening follow-up (`svmc-webr`)**: Before closing Phase 5 integrated validation, audit the remaining wrapper-only behaviors in `packages/svmc-webr` so browser oddities do not get normalized as model truth. Current items to revisit include the WASM-only replacement of fatal Yasso guards with silent `return`s and any other adapter defaults that bypass the original file-driven control path.
+- **Adapter hardening follow-up (`svmc-webr`)**: ✅ Partially addressed. Status codes for YASSO failures, `opt_hypothesis` propagation, PFT validation, and management forwarding are now in place. Remaining: audit the WASM-only replacement of fatal Yasso guards with silent `return`s and any other adapter defaults that bypass the original file-driven control path.
 - Wire up initializers via the adapter layer: Reading namelists (Configs) and starting `initialization_spafhy` & `wrapper_yasso_initialize_totc`.
 - Construct the **Hourly Loop** using JAX loops (`jax.lax.scan` or `jax.lax.fori_loop`) coupling `P-Hydro` → `canopy_water_flux` → `soil_water`.
 - Construct the **Daily/Yearly Loops** wrapping allocations and Yasso updates.
 - Verify overall system behavior against original Fortran integrated outputs.
+- **JAX replay playback test**: Play back the 7-day integration fixture through the composed JAX model, checking both raw trajectories and derived metrics.
+- **TS 100+ step rollout test**: Exercise the integration fixture in both `float32` and `float64` modes with `checkLeaks`, verifying that accumulation errors do not diverge fatally from JAX/Fortran `float64` baselines (DoD criterion 7).
 
 ## Phase 6: Interactive Web Application
 
 Once the full pipeline passes in `jax-js-nonconsuming` (`svmc-js`), build the front-end to utilize the fast browser-based execution.
+
+Note: The Qvidja reference replay demo is already running via WebR/Fortran (`website/index.html`). Phase 6 upgrades this to use the pure-JS `svmc-js` pipeline, enabling client-side parameter calibration via autodiff.
 
 - Initialize a web-app via Vite/React (or preferred framework).
 - Map configurable namelists to a UI parameters dashboard.
