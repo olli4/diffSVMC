@@ -1,3 +1,6 @@
-# Module dependency ordering for Fortran compilation
-allocation.o: readvegpara_stub.o
-allocation_wrappers.o: allocation.o readvegpara_stub.o
+# Force all objects to be built before linking.
+# R's default build auto-detects source files but fails with Fortran module
+# dependencies. We override the all target to build in dependency order.
+.PHONY: all
+
+OBJECTS = readvegpara_stub.o allocation.o allocation_wrappers.o init.o

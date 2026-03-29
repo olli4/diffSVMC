@@ -14,6 +14,8 @@ packages/
                and the fpm-staged source mirror used for reference builds
   svmc-jax/    JAX reimplementation (float64, autodiff, invariant tests)
   svmc-js/     TypeScript reimplementation (float32/float64, browser-ready)
+  svmc-webr/   R/WebR wrapper for running Fortran allocation in the browser
+website/       Interactive demo (Vite, served on GitHub Pages)
 vendor/
   SVMC/        Original Fortran model (git submodule)
 scripts/       CI tooling (branch coverage audit)
@@ -59,6 +61,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 - NetCDF C and Fortran development libraries, with `nf-config` on `PATH` when
   compiler include paths are not already configured
 
+For the WebR build and native R testing:
+
+- **R ≥ 4.3** with development headers
+- **Docker** (for building the WASM R package locally)
+
+On Ubuntu/Debian:
+
+```bash
+sudo apt-get install r-base r-base-dev
+```
+
 ### Install and test
 
 ```bash
@@ -91,6 +104,49 @@ Within this repository, `vendor/SVMC/` is the maintained Fortran reference base 
 porting and fixture generation. It was seeded from the external
 `huitang-earth/SVMC` project and may carry repo-local, non-numerical modifications
 that support conservative porting work.
+
+### Website (interactive demo)
+
+The `website/` package provides an interactive browser demo of the
+allocation model running via [WebR](https://docs.r-wasm.org/webr/latest/)
+(Fortran compiled to WebAssembly).
+
+```bash
+# Development server (port 5173, with COOP/COEP headers for SharedArrayBuffer)
+pnpm -C website dev
+
+# Production build (WebR WASM package + Vite)
+pnpm build
+```
+
+The first `pnpm build` uses Docker to compile the R package to WASM via
+the `ghcr.io/r-wasm/webr:main` image. Subsequent builds skip this step
+if `website/public/bin/` already exists. To force a rebuild:
+
+```bash
+rm -rf website/public/bin website/public/src
+pnpm build
+```
+
+For local development without Docker, you can seed the CRAN repo from a
+CI artifact:
+
+```bash
+# Download the artifact from GitHub Pages or CI, then:
+tar xf artifact.tar -C website/public/
+pnpm -C website dev
+```
+
+#### Testing the R package natively
+
+You can also build and test the R package with native R (not WebR):
+
+```bash
+R CMD build packages/svmc-webr
+R CMD INSTALL --library=tmp/R-lib SVMCwebr_0.1.0.tar.gz
+R_LIBS=tmp/R-lib R -e 'library(SVMCwebr); str(alloc_hypothesis_2(
+  temp_day=15, gpp_day=3e-7, leaf_rdark_day=3e-8, pft_type_code=1L))'
+```
 
 ### Precision modes
 

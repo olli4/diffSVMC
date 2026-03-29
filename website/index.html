@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVMC Allocation — Qvidja Demo</title>
+<style>
+:root {
+  --bg: #f8f9fa; --card: #fff; --border: #dee2e6;
+  --text: #212529; --muted: #6c757d; --accent: #0d6efd;
+  --ok: #198754; --warn: #fd7e14;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.5; padding: 1rem;
+}
+h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+.subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: .5rem; padding: 1rem;
+}
+.card h2 { font-size: 1rem; margin-bottom: .75rem; }
+label { display: flex; justify-content: space-between; align-items: center;
+  font-size: .85rem; margin-bottom: .35rem; }
+label span { color: var(--muted); }
+input[type=number], select {
+  width: 9rem; padding: .2rem .4rem; border: 1px solid var(--border);
+  border-radius: .25rem; font-size: .85rem; text-align: right;
+}
+select { text-align: left; }
+button {
+  padding: .5rem 1.25rem; border: none; border-radius: .375rem;
+  font-size: .9rem; cursor: pointer; margin-top: .5rem;
+}
+#run-btn { background: var(--accent); color: #fff; }
+#run-btn:disabled { opacity: .5; cursor: not-allowed; }
+#sim-btn { background: var(--ok); color: #fff; margin-left: .5rem; }
+#sim-btn:disabled { opacity: .5; cursor: not-allowed; }
+#status {
+  margin: .75rem 0; padding: .5rem .75rem; border-radius: .25rem;
+  font-size: .85rem; background: #e9ecef;
+}
+#status.loading { background: #fff3cd; }
+#status.ok { background: #d1e7dd; }
+#status.err { background: #f8d7da; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th, td { padding: .3rem .5rem; text-align: right; border-bottom: 1px solid var(--border); }
+th { text-align: left; font-weight: 600; }
+td:first-child, th:first-child { text-align: left; }
+#chart-container { margin-top: 1rem; }
+canvas { width: 100% !important; max-height: 300px; }
+footer { margin-top: 1.5rem; text-align: center; color: var(--muted); font-size: .8rem; }
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>SVMC Allocation Model — Qvidja Site Demo</h1>
+<p class="subtitle">
+  Carbon allocation via WebR (Fortran → WebAssembly).
+  Qvidja is a Finnish grassland research site with eddy-covariance flux measurements.
+</p>
+<div id="status" class="loading">Initializing WebR…</div>
+
+<div class="grid">
+  <!-- Inputs ---------------------------------------------------------- -->
+  <div class="card">
+    <h2>Input Parameters</h2>
+    <fieldset id="inputs">
+      <legend style="font-size:.85rem;color:var(--muted)">Climate &amp; photosynthesis</legend>
+      <label>temp_day (°C) <input type="number" id="temp_day" value="15" step="0.5"></label>
+      <label>gpp_day (kg C m⁻² s⁻¹) <input type="number" id="gpp_day" value="3e-7" step="1e-8"></label>
+      <label>leaf_rdark_day <input type="number" id="leaf_rdark_day" value="3e-8" step="1e-9"></label>
+    </fieldset>
+    <fieldset style="margin-top:.5rem">
+      <legend style="font-size:.85rem;color:var(--muted)">Carbon pools</legend>
+      <label>cleaf <input type="number" id="cleaf" value="0.1" step="0.01"></label>
+      <label>cstem <input type="number" id="cstem" value="0.02" step="0.01"></label>
+      <label>croot <input type="number" id="croot" value="0.05" step="0.01"></label>
+      <label>cgrain <input type="number" id="cgrain" value="0" step="0.001"></label>
+    </fieldset>
+    <fieldset style="margin-top:.5rem">
+      <legend style="font-size:.85rem;color:var(--muted)">Allometry (from Qvidja namelist)</legend>
+      <label>cratio_resp <input type="number" id="cratio_resp" value="0.4" step="0.05"></label>
+      <label>cratio_leaf <input type="number" id="cratio_leaf" value="0.8" step="0.05"></label>
+      <label>cratio_root <input type="number" id="cratio_root" value="0.2" step="0.05"></label>
+      <label>cratio_biomass <input type="number" id="cratio_biomass" value="0.42" step="0.01"></label>
+      <label>harvest_index <input type="number" id="harvest_index" value="0.5" step="0.1"></label>
+      <label>turnover_cleaf <input type="number" id="turnover_cleaf" value="0.001123" step="0.0001"></label>
+      <label>turnover_croot <input type="number" id="turnover_croot" value="0.001123" step="0.0001"></label>
+      <label>sla <input type="number" id="sla" value="10" step="1"></label>
+      <label>q10 <input type="number" id="q10" value="2" step="0.1"></label>
+      <label>invert_option <input type="number" id="invert_option" value="0" step="1" min="0" max="2"></label>
+    </fieldset>
+    <fieldset style="margin-top:.5rem">
+      <legend style="font-size:.85rem;color:var(--muted)">Management &amp; PFT</legend>
+      <label>management_type
+        <select id="management_type">
+          <option value="0" selected>0 — none</option>
+          <option value="1">1 — harvest</option>
+          <option value="3">3 — compost</option>
+          <option value="4">4 — fertilize</option>
+        </select>
+      </label>
+      <label>management_c_input <input type="number" id="management_c_input" value="0" step="1e-9"></label>
+      <label>management_c_output <input type="number" id="management_c_output" value="0" step="1e-9"></label>
+      <label>pft_type
+        <select id="pft_type_code">
+          <option value="1" selected>grass</option>
+          <option value="2">oat</option>
+          <option value="0">other</option>
+        </select>
+      </label>
+      <label>pheno_stage
+        <select id="pheno_stage">
+          <option value="1" selected>1 — growth</option>
+          <option value="2">2 — dormancy</option>
+        </select>
+      </label>
+    </fieldset>
+    <div style="margin-top:.75rem">
+      <button id="run-btn" disabled>Run single step</button>
+      <button id="sim-btn" disabled>Simulate 365 days</button>
+    </div>
+  </div>
+
+  <!-- Outputs --------------------------------------------------------- -->
+  <div class="card">
+    <h2>Output</h2>
+    <table>
+      <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+      <tbody id="result-body">
+        <tr><td colspan="2" style="color:var(--muted);text-align:center">
+          Run the model to see results</td></tr>
+      </tbody>
+    </table>
+    <div id="chart-container" style="display:none">
+      <h2 style="margin-top:1rem">365-Day Simulation</h2>
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/olli4/diffSVMC">diffSVMC</a> —
+  Fortran allocation model compiled to WebAssembly via
+  <a href="https://docs.r-wasm.org/webr/latest/">WebR</a>.
+  Data from the Qvidja grassland research site, Finland.
+</footer>
+
+<!-- WebR + Chart.js --------------------------------------------------- -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script type="module">
+import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
+
+const status = document.getElementById("status");
+const runBtn = document.getElementById("run-btn");
+const simBtn = document.getElementById("sim-btn");
+
+// ---- boot WebR & install SVMCwebr ----
+status.textContent = "Loading WebR runtime…";
+const webR = new WebR();
+await webR.init();
+
+status.textContent = "Installing SVMCwebr from GitHub Pages…";
+await webR.evalRVoid(`
+  options(repos = c(
+    svmc = "${repoUrl()}",
+    webr = "https://repo.r-wasm.org/"
+  ))
+  install.packages("SVMCwebr")
+  library(SVMCwebr)
+`);
+
+status.className = "ok";
+status.textContent = "Ready — SVMCwebr loaded.";
+runBtn.disabled = false;
+simBtn.disabled = false;
+
+// ---- helpers ----
+function repoUrl() {
+  // In production the demo is deployed under <pages-root>/demo/ and the
+  // CRAN-like repo sits at <pages-root>/.  In local dev the Vite proxy
+  // forwards /bin and /src to the extracted artifact.
+  const loc = window.location;
+  if (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") {
+    return loc.origin;
+  }
+  // Strip /demo/… suffix to reach the pages root where bin/ and src/ live.
+  return loc.origin + loc.pathname.replace(/\/demo\/?.*$/, "/");
+}
+
+function readInputs() {
+  const ids = [
+    "temp_day","gpp_day","leaf_rdark_day",
+    "cleaf","cstem","croot","cgrain",
+    "cratio_resp","cratio_leaf","cratio_root","cratio_biomass",
+    "harvest_index","turnover_cleaf","turnover_croot",
+    "sla","q10","invert_option",
+    "management_type","management_c_input","management_c_output",
+    "pft_type_code","pheno_stage"
+  ];
+  const vals = {};
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    vals[id] = el.tagName === "SELECT" ? parseInt(el.value) : parseFloat(el.value);
+  }
+  return vals;
+}
+
+function renderTable(obj) {
+  const tbody = document.getElementById("result-body");
+  const keys = [
+    "npp_day","auto_resp","cleaf","cstem","croot","cgrain",
+    "lai","litter_cleaf","litter_croot","compost",
+    "abovebiomass","belowbiomass","yield_val","grain_fill","pheno_stage"
+  ];
+  tbody.innerHTML = keys
+    .map(k => {
+      const v = obj[k];
+      const fmt = v === undefined ? "—" : Number(v).toExponential(6);
+      return `<tr><td>${k}</td><td>${fmt}</td></tr>`;
+    })
+    .join("");
+}
+
+async function callAlloc(p) {
+  const res = await webR.evalR(`
+    r <- alloc_hypothesis_2(
+      temp_day = ${p.temp_day},
+      gpp_day  = ${p.gpp_day},
+      leaf_rdark_day = ${p.leaf_rdark_day},
+      cleaf = ${p.cleaf}, cstem = ${p.cstem}, croot = ${p.croot},
+      cgrain = ${p.cgrain},
+      cratio_resp = ${p.cratio_resp}, cratio_leaf = ${p.cratio_leaf},
+      cratio_root = ${p.cratio_root}, cratio_biomass = ${p.cratio_biomass},
+      harvest_index = ${p.harvest_index},
+      turnover_cleaf = ${p.turnover_cleaf}, turnover_croot = ${p.turnover_croot},
+      sla = ${p.sla}, q10 = ${p.q10}, invert_option = ${p.invert_option},
+      management_type = ${p.management_type}L,
+      management_c_input = ${p.management_c_input},
+      management_c_output = ${p.management_c_output},
+      pft_type_code = ${p.pft_type_code}L,
+      pheno_stage = ${p.pheno_stage}L
+    )
+    as.list(r)
+  `);
+  const out = {};
+  const names = await (await res.names()).toArray();
+  for (const n of names) {
+    const val = await (await res.get(n)).toNumber();
+    out[n] = val;
+  }
+  return out;
+}
+
+// ---- single step ----
+runBtn.addEventListener("click", async () => {
+  runBtn.disabled = true;
+  status.className = "loading";
+  status.textContent = "Running…";
+  try {
+    const p = readInputs();
+    const out = await callAlloc(p);
+    renderTable(out);
+    status.className = "ok";
+    status.textContent = "Done.";
+  } catch (e) {
+    status.className = "err";
+    status.textContent = "Error: " + e.message;
+  }
+  runBtn.disabled = false;
+});
+
+// ---- 365-day simulation ----
+let chart = null;
+simBtn.addEventListener("click", async () => {
+  simBtn.disabled = true;
+  status.className = "loading";
+  status.textContent = "Simulating 365 days…";
+  try {
+    const p = readInputs();
+    const days = 365;
+    const series = { lai: [], cleaf: [], cstem: [], croot: [], npp: [] };
+    // evolve state
+    let state = { ...p, npp_day: 0, auto_resp: 0,
+      litter_cleaf: 0, litter_croot: 0, compost: 0,
+      lai: p.cleaf * p.sla,
+      abovebiomass: 0, belowbiomass: 0, yield_val: 0, grain_fill: 0 };
+
+    for (let d = 0; d < days; d++) {
+      // simple seasonal temperature: 15 ± 12 °C
+      const T = 15 + 12 * Math.sin(2 * Math.PI * (d - 80) / 365);
+      // simple seasonal GPP: peak mid-summer
+      const gppScale = Math.max(0, Math.sin(Math.PI * Math.max(0, T) / 30));
+      const gpp = p.gpp_day * gppScale;
+      const rdark = p.leaf_rdark_day * gppScale;
+
+      const call = {
+        ...p,
+        temp_day: T,
+        gpp_day: gpp,
+        leaf_rdark_day: rdark,
+        cleaf: state.cleaf,
+        cstem: state.cstem,
+        croot: state.croot,
+        cgrain: state.cgrain || 0,
+      };
+
+      const out = await callAlloc(call);
+      state.cleaf = out.cleaf;
+      state.cstem = out.cstem;
+      state.croot = out.croot;
+      state.cgrain = out.cgrain;
+      state.lai = out.lai;
+
+      series.lai.push(out.lai);
+      series.cleaf.push(out.cleaf);
+      series.cstem.push(out.cstem);
+      series.croot.push(out.croot);
+      series.npp.push(out.npp_day);
+
+      if (d % 30 === 0) {
+        status.textContent = `Simulating… day ${d + 1}/${days}`;
+      }
+    }
+
+    // render chart
+    document.getElementById("chart-container").style.display = "";
+    if (chart) chart.destroy();
+    const ctx = document.getElementById("chart").getContext("2d");
+    chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: Array.from({ length: days }, (_, i) => i + 1),
+        datasets: [
+          { label: "LAI", data: series.lai, borderWidth: 2, pointRadius: 0,
+            borderColor: "#198754", yAxisID: "y" },
+          { label: "C_leaf", data: series.cleaf, borderWidth: 1.5, pointRadius: 0,
+            borderColor: "#0d6efd", yAxisID: "y" },
+          { label: "C_root", data: series.croot, borderWidth: 1.5, pointRadius: 0,
+            borderColor: "#6f42c1", yAxisID: "y" },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { title: { display: true, text: "Day of year" } },
+          y: { title: { display: true, text: "Value" }, position: "left" },
+        },
+      },
+    });
+
+    // also show last-day table
+    renderTable({
+      npp_day: series.npp[days - 1],
+      cleaf: series.cleaf[days - 1],
+      cstem: series.cstem[days - 1],
+      croot: series.croot[days - 1],
+      lai: series.lai[days - 1],
+    });
+
+    status.className = "ok";
+    status.textContent = `Simulation complete — ${days} daily steps.`;
+  } catch (e) {
+    status.className = "err";
+    status.textContent = "Error: " + e.message;
+    console.error(e);
+  }
+  simBtn.disabled = false;
+});
+</script>
+</body>
+</html>

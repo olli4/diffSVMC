@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "build": "pnpm -C website build"
   },
   "devDependencies": {
     "@vitest/browser": "^3.2.4",

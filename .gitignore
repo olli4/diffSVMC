@@ -37,3 +37,8 @@ packages/svmc-webr/src/*.dll
 
 # Vitest browser-mode screenshot artifacts
 __screenshots__/
+
+# Website build artifacts
+website/public/bin/
+website/public/src/
+website/dist/

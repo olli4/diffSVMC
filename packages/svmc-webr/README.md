@@ -52,6 +52,57 @@ observed LAI changes.  See `?invert_alloc` for argument details.
 | `1`  | Grass                 |
 | `2`  | Oat                   |
 
+## Building
+
+### WASM (WebR) via Docker
+
+The `website/build-webr.sh` script builds the package to WebAssembly
+using the `ghcr.io/r-wasm/webr:main` Docker image and places the
+resulting CRAN-like repo in `website/public/`:
+
+```bash
+# From the repo root:
+pnpm build              # builds WASM package + Vite site
+pnpm -C website dev     # dev server at http://localhost:5173
+```
+
+The script auto-detects whether Docker needs `sudo`. If Docker is not
+available, you can seed `website/public/` from a CI artifact instead:
+
+```bash
+tar xf tmp/artifact.tar -C website/public/
+```
+
+### Native R (for local testing)
+
+Requires R ≥ 4.3 and gfortran. On Ubuntu/Debian:
+
+```bash
+sudo apt-get install r-base r-base-dev
+```
+
+Build and install:
+
+```bash
+R CMD build packages/svmc-webr
+mkdir -p tmp/R-lib
+R CMD INSTALL --library=tmp/R-lib SVMCwebr_0.1.0.tar.gz
+```
+
+Test:
+
+```bash
+R_LIBS=tmp/R-lib R -e '
+library(SVMCwebr)
+result <- alloc_hypothesis_2(
+  temp_day = 15, gpp_day = 3e-7, leaf_rdark_day = 3e-8,
+  cleaf = 0.1, cstem = 0.02, croot = 0.05,
+  pft_type_code = 1L  # grass
+)
+str(result)
+'
+```
+
 ## WebR Usage
 
 Once the CI workflow builds and deploys the WASM binary to GitHub Pages,

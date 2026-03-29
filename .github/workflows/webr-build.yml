@@ -1,40 +1,81 @@
 # Build the SVMCwebr R package for WebR (WebAssembly) and deploy
-# as a CRAN-like repository to GitHub Pages.
+# as a CRAN-like repository + interactive demo to GitHub Pages.
 #
-# Uses the r-wasm/actions reusable workflow, which:
-#   1. Checks out this repo
-#   2. Builds the R package inside the ghcr.io/r-wasm/webr Docker image
-#   3. Creates a CRAN-like repo structure in _site/
-#   4. Deploys to GitHub Pages
+# Steps:
+#   1. Build the WASM R package via rwasm (in Docker)
+#   2. Build the Vite website
+#   3. Merge CRAN repo + website dist into _site/
+#   4. Deploy to GitHub Pages
 #
 # Prerequisites:
 #   - Enable GitHub Pages in repo settings:
 #     Settings > Pages > Build and deployment > Source: GitHub Actions
 #
-# After deployment, install in WebR with:
-#   install.packages("SVMCwebr",
-#     repos = c("https://<owner>.github.io/diffSVMC/",
-#               "https://repo.r-wasm.org/"))
+# After deployment:
+#   Demo:  https://<owner>.github.io/diffSVMC/demo/
+#   Repo:  install.packages("SVMCwebr",
+#            repos = c("https://<owner>.github.io/diffSVMC/",
+#                      "https://repo.r-wasm.org/"))
 
 name: Build WebR Package
 
 on:
-  # Manual trigger for testing / on-demand builds
   workflow_dispatch: {}
-  # Also build on pushes that touch the R package
   push:
     branches: [main]
     paths:
       - "packages/svmc-webr/**"
+      - "website/**"
       - ".github/workflows/webr-build.yml"
 
+permissions:
+  repository-projects: read
+  pages: write
+  id-token: write
+
 jobs:
-  build-webr:
-    uses: r-wasm/actions/.github/workflows/deploy-cran-repo.yml@v2
-    with:
-      packages: "local::packages/svmc-webr"
-      compress: true
-    permissions:
-      repository-projects: read
-      pages: write
-      id-token: write
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Build WASM R package in the WebR Docker image ----
+      - name: Build WASM package
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/r-wasm/webr:main
+          options: -v ${{ github.workspace }}:/work -w /work
+          run: |
+            mkdir -p repo
+            Rscript -e 'rwasm::add_pkg("local::packages/svmc-webr", repo_dir = "repo")'
+
+      # ---- Build Vite website ----
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: SKIP_WEBR=1 pnpm -C website build:site
+
+      # ---- Assemble site: CRAN repo at root, website at /demo/ ----
+      - name: Assemble _site
+        run: |
+          mkdir -p _site/demo
+          cp -r repo/* _site/
+          cp -r website/dist/* _site/demo/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
