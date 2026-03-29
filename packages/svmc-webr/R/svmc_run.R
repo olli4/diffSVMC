@@ -37,6 +37,14 @@
 #' @param yasso_cn_input C:N ratio of input.
 #' @param yasso_fract_root Fraction of root input.
 #' @param yasso_fract_legacy Fraction of legacy SOC.
+#' @param yasso_init_temp Optional initialization temperature for YASSO (deg C).
+#'   Defaults to the mean daily temperature derived from \\code{temp_hr}.
+#' @param yasso_init_temp_ampl Optional initialization annual temperature
+#'   amplitude for YASSO (deg C). Defaults to half the range of daily mean
+#'   temperatures derived from \\code{temp_hr}.
+#' @param yasso_init_precip Optional initialization daily precipitation for
+#'   YASSO (mm/day). Defaults to the mean daily precipitation derived from
+#'   \\code{prec_hr}.
 #'
 #' @param temp_hr Numeric vector (nhours), temperature in K.
 #' @param rg_hr Numeric vector (nhours), global radiation in W/m2.
@@ -83,11 +91,36 @@ svmc_run <- function(
     # Yasso
     yasso_totc = 16, yasso_cn_input = 50,
     yasso_fract_root = 0.5, yasso_fract_legacy = 0,
+    yasso_init_temp = NULL,
+    yasso_init_temp_ampl = NULL,
+    yasso_init_precip = NULL,
     # Management
     manage_type = NULL, manage_c_in = NULL, manage_c_out = NULL) {
 
   nhours <- as.integer(nhours)
   ndays  <- as.integer(ndays)
+
+  if (nhours != ndays * 24L) {
+    stop("nhours must equal ndays * 24 for the hourly-to-daily integration loop")
+  }
+
+  if (length(temp_hr) != nhours || length(rg_hr) != nhours ||
+      length(prec_hr) != nhours || length(vpd_hr) != nhours ||
+      length(pres_hr) != nhours || length(co2_hr) != nhours ||
+      length(wind_hr) != nhours) {
+    stop("all hourly forcing vectors must have length nhours")
+  }
+
+  if (length(lai_day) != ndays) {
+    stop("lai_day must have length ndays")
+  }
+
+  if (!isTRUE(yasso_fract_root >= 0 && yasso_fract_root <= 1)) {
+    stop("yasso_fract_root must be between 0 and 1")
+  }
+  if (!isTRUE(yasso_fract_legacy >= 0 && yasso_fract_legacy <= 1)) {
+    stop("yasso_fract_legacy must be between 0 and 1")
+  }
 
   # Default management arrays
   if (is.null(manage_type)) manage_type <- integer(ndays)
@@ -100,12 +133,39 @@ svmc_run <- function(
   if (is.null(soilmoist_day) || length(soilmoist_day) == 0)
     soilmoist_day <- numeric(ndays)
 
+  if (length(snowdepth_day) != ndays || length(soilmoist_day) != ndays ||
+      length(manage_type) != ndays || length(manage_c_in) != ndays ||
+      length(manage_c_out) != ndays) {
+    stop("all daily observation and management vectors must have length ndays")
+  }
+
+  if (is.null(yasso_init_temp) || is.null(yasso_init_temp_ampl) || is.null(yasso_init_precip)) {
+    temp_day_matrix <- matrix(as.double(temp_hr) - 273.15, ncol = 24, byrow = TRUE)
+    prec_day_matrix <- matrix(as.double(prec_hr), ncol = 24, byrow = TRUE)
+    daily_temp_c <- rowMeans(temp_day_matrix)
+    daily_precip_mm <- rowSums(prec_day_matrix) * 3600
+
+    if (is.null(yasso_init_temp)) {
+      yasso_init_temp <- mean(daily_temp_c)
+    }
+    if (is.null(yasso_init_temp_ampl)) {
+      yasso_init_temp_ampl <- 0.5 * (max(daily_temp_c) - min(daily_temp_c))
+    }
+    if (is.null(yasso_init_precip)) {
+      yasso_init_precip <- mean(daily_precip_mm)
+    }
+  }
+
+  if (!all(is.finite(c(yasso_init_temp, yasso_init_temp_ampl, yasso_init_precip)))) {
+    stop("derived YASSO initialization climate must be finite")
+  }
+
   # Pack scalar parameters into arrays for .Fortran (MAX_ARGS=65 limit)
   # iparams(7): nhours, ndays, obs_lai, obs_soilmoist, obs_snowdepth, pft_type_code, invert_option
   iparams <- as.integer(c(nhours, ndays,
                            as.integer(obs_lai), as.integer(obs_soilmoist),
                            as.integer(obs_snowdepth), pft_type_code, invert_option))
-  # rparams(45): see svmc_wrapper.f90 for order
+  # rparams(48): see svmc_wrapper.f90 for order
   rparams <- as.double(c(
     time_step, lat, lon,
     conductivity, psi50, b, alpha, gamma, rdark,
@@ -118,7 +178,8 @@ svmc_run <- function(
     cratio_resp, cratio_leaf, cratio_root, cratio_biomass,
     harvest_index, turnover_cleaf, turnover_croot,
     sla, q10,
-    yasso_totc, yasso_cn_input, yasso_fract_root, yasso_fract_legacy))
+    yasso_totc, yasso_cn_input, yasso_fract_root, yasso_fract_legacy,
+    yasso_init_temp, yasso_init_temp_ampl, yasso_init_precip))
 
   res <- .Fortran("r_svmc_run",
     iparams = iparams,

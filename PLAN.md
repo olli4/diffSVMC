@@ -137,6 +137,7 @@ Quality bar carried over from Phase 3:
 - Any TS tolerance for long-horizon rollouts must be backed by measured drift and epsilon-scaled accumulation analysis, not a blanket per-phase relaxation.
 
 - **Fortran Build Modernization (`fpm`/`CMake`)**: At this point, integrating the 20+ Yasso and Allocation sub-modules inside the Fortran harness will break the manual `Makefile` dependency ordering. Before writing Yasso harness logs, scrap the `Makefile` and adopt `fpm` (Fortran Package Manager) or `CMake` for reliable automated dependency parsing. Doing this early in Phase 4 defers scope creep but prevents a bottleneck precisely when the Fortran inclusion graph becomes intractable.
+- **Direct-interface adapter audit (`svmc-webr`)**: When Phase 4 reaches `yasso.initialize_totc`, revisit the current `packages/svmc-webr` adapter shortcuts before treating browser SOC behavior as meaningful reference behavior. In particular, replace the stubbed Yasso initialization climate defaults (`tempr_c=5`, `tempr_ampl=20`, `precip_day=1.8`) with site/forcing-backed values or explicit adapter inputs, then add wrapper-boundary fixtures for `wrapper_yasso_initialize_totc` and daily decomposition so initialization drift is caught separately from the downstream JAX/TS ports.
 - Allocation modules: `invert_alloc` and `alloc_hypothesis_2`.
 - Yasso20 Soil Carbon:
   - `yasso.initialize_totc` (Setup routines).
@@ -160,6 +161,7 @@ Quality bar carried over from Phase 3:
 - Keep known upstream accounting artifacts separate from true port regressions so integration tests do not normalize new bugs.
 
 - **I/O Boundary Rule**: Keep namelist parsing and netCDF reading in a thin adapter layer separate from the computational core. Submodel functions must accept plain arrays/scalars so they remain testable and composable outside the original SVMC file conventions.
+- **Adapter hardening follow-up (`svmc-webr`)**: Before closing Phase 5 integrated validation, audit the remaining wrapper-only behaviors in `packages/svmc-webr` so browser oddities do not get normalized as model truth. Current items to revisit include the WASM-only replacement of fatal Yasso guards with silent `return`s and any other adapter defaults that bypass the original file-driven control path.
 - Wire up initializers via the adapter layer: Reading namelists (Configs) and starting `initialization_spafhy` & `wrapper_yasso_initialize_totc`.
 - Construct the **Hourly Loop** using JAX loops (`jax.lax.scan` or `jax.lax.fori_loop`) coupling `P-Hydro` → `canopy_water_flux` → `soil_water`.
 - Construct the **Daily/Yearly Loops** wrapping allocations and Yasso updates.

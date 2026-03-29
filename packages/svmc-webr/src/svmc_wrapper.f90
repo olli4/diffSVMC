@@ -39,14 +39,15 @@ subroutine r_svmc_run( &
 
   ! --- Packed parameter arrays ---
   ! iparams(7): nhours, ndays, obs_lai, obs_soilmoist, obs_snowdepth, pft_type_code, invert_option
-  ! rparams(45): time_step, lat, lon, conductivity, psi50, b, alpha, gamma, rdark,
+  ! rparams(48): time_step, lat, lon, conductivity, psi50, b, alpha, gamma, rdark,
   !   soil_depth, max_poros, fc, wp, ksat, maxpond, n_van, watres, alpha_van, watsat,
   !   wmax, wmaxsnow, hc, w_leaf, rw, rwmin, gsoil, kmelt, kfreeze, frac_snowliq,
   !   zmeas, zground, zo_ground, cratio_resp, cratio_leaf, cratio_root, cratio_biomass,
   !   harvest_index, turnover_cleaf, turnover_croot, sla, q10,
-  !   yasso_totc, yasso_cn_input, yasso_fract_root, yasso_fract_legacy
+  !   yasso_totc, yasso_cn_input, yasso_fract_root, yasso_fract_legacy,
+  !   yasso_init_temp, yasso_init_temp_ampl, yasso_init_precip
   integer, intent(in)          :: iparams(7)
-  double precision, intent(in) :: rparams(45)
+  double precision, intent(in) :: rparams(48)
 
   ! --- Unpack dimensions ---
   integer :: nhours, ndays
@@ -65,6 +66,7 @@ subroutine r_svmc_run( &
   double precision :: sla_in, q10_in
   double precision :: yasso_totc_in, yasso_cn_input_in
   double precision :: yasso_fract_root_in, yasso_fract_legacy_in
+  double precision :: yasso_init_temp_in, yasso_init_temp_ampl_in, yasso_init_precip_in
 
   ! --- Hourly climate forcing ---
   double precision, intent(in) :: temp_hr(*)       ! temperature (K)
@@ -207,6 +209,9 @@ subroutine r_svmc_run( &
   yasso_cn_input_in = rparams(43)
   yasso_fract_root_in   = rparams(44)
   yasso_fract_legacy_in = rparams(45)
+  yasso_init_temp_in     = rparams(46)
+  yasso_init_temp_ampl_in = rparams(47)
+  yasso_init_precip_in    = rparams(48)
 
   ! ===== Set module-level variables from R arguments =====
 
@@ -288,6 +293,9 @@ subroutine r_svmc_run( &
   yasso_para%cn_input = real(yasso_cn_input_in)
   yasso_para%fract_root_input = real(yasso_fract_root_in)
   yasso_para%fract_legacy_soc = real(yasso_fract_legacy_in)
+  yasso_para%tempr_c = real(yasso_init_temp_in)
+  yasso_para%tempr_ampl = real(yasso_init_temp_ampl_in)
+  yasso_para%precip_day = real(yasso_init_precip_in)
 
   call wrapper_yasso_initialize_totc(soilcn_state, yasso_para)
 

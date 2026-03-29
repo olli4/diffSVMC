@@ -2,9 +2,15 @@
 # Build the SVMCwebr WASM R package locally using Docker,
 # producing a CRAN-like repo in website/public/.
 #
+# Docker outputs to tmp/webr-staging/ first (to avoid root-owned
+# files landing directly in website/public/), then copies across.
+#
+# If website/public/{bin,src} are root-owned from a previous build,
+# run the one-time fix first:  sudo website/install-webr.sh
+#
 # Usage:
-#   ./website/build-webr.sh          # build via Docker
-#   SKIP_WEBR=1 ./website/build-webr.sh  # skip (CI handles it)
+#   ./website/build-webr.sh               # build via Docker
+#   SKIP_WEBR=1 ./website/build-webr.sh   # skip (CI handles it)
 set -euo pipefail
 
 if [[ "${SKIP_WEBR:-}" == "1" ]]; then
@@ -13,6 +19,7 @@ if [[ "${SKIP_WEBR:-}" == "1" ]]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STAGING="$REPO_ROOT/tmp/webr-staging"
 OUT="$REPO_ROOT/website/public"
 
 # If the CRAN repo already exists in public/, skip rebuild.
@@ -22,7 +29,17 @@ if [[ -f "$OUT/bin/emscripten/contrib/4.5/PACKAGES" ]]; then
   exit 0
 fi
 
-mkdir -p "$OUT"
+# ---- Check for root-owned leftovers before we start the slow Docker build ----
+for d in "$OUT/bin" "$OUT/src"; do
+  if [[ -d "$d" ]] && [[ "$(stat -c %u "$d")" != "$(id -u)" ]]; then
+    echo "ERROR: $d is not owned by you (owned by uid $(stat -c %u "$d"))."
+    echo "One-time fix:  sudo website/install-webr.sh"
+    exit 1
+  fi
+done
+
+rm -rf "$STAGING"
+mkdir -p "$STAGING" "$OUT"
 
 # Pick a working docker command (rootless or sudo).
 DOCKER=
@@ -49,8 +66,17 @@ $DOCKER run --rm \
   bash -c '
     mkdir -p /tmp/repo
     Rscript -e "rwasm::add_pkg(\"local::packages/svmc-webr\", repo_dir = \"/tmp/repo\")"
-    cp -r /tmp/repo/* /work/website/public/
+    cp -r /tmp/repo/* /work/tmp/webr-staging/
   '
+
+# Fix ownership — Docker may have written as root.
+if [[ -n "$(find "$STAGING" -not -user "$(id -u)" 2>/dev/null | head -1)" ]]; then
+  echo "Fixing ownership of staging directory…"
+  sudo chown -R "$(id -u):$(id -g)" "$STAGING"
+fi
+
+# Copy from staging to website/public/ (user-owned after one-time fix).
+cp -r "$STAGING"/* "$OUT"/
 
 echo "WebR package built → website/public/"
 ls -R "$OUT"

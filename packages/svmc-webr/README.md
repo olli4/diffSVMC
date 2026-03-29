@@ -1,13 +1,17 @@
-# SVMCwebr — SVMC allocation model for WebR
+# SVMCwebr — SVMC model for WebR
 
-R package wrapping the SVMC (Simple Vegetation Model of Carbon) Fortran
-allocation submodel for use in [WebR](https://docs.r-wasm.org/webr/latest/).
-This enables running the original Fortran allocation code in the browser
-for side-by-side comparison with the `jax-js-nonconsuming` TypeScript port.
+R package wrapping the full SVMC (Simple Vegetation Model of Carbon) Fortran
+model for use in [WebR](https://docs.r-wasm.org/webr/latest/).
+This enables running the original Fortran code in the browser for
+side-by-side comparison with the `jax-js-nonconsuming` TypeScript port.
+
+The package includes the complete daily integration loop: P-Hydro
+photosynthesis, SpaFHy canopy and soil water balance, carbon allocation,
+and YASSO20 soil carbon decomposition.
 
 ## Provenance
 
-The Fortran source in `src/` derives from `vendor/SVMC/src/allocation.f90`
+The Fortran source in `src/` derives from `vendor/SVMC/src/`
 (which itself derives from [huitang-earth/SVMC](https://github.com/huitang-earth/SVMC)).
 
 Modifications from the vendor source:
@@ -18,21 +22,31 @@ Modifications from the vendor source:
    the reference build.  Explicit `real(8)` avoids compiler-specific flags
    and matches the reference numerical behavior.
 
-2. **`readalloc_namelist` removed** — it reads parameters from a file,
-   which is incompatible with WebR's virtual filesystem.  Parameters are
-   instead passed as R function arguments.
+2. **Namelist I/O removed** — `readalloc_namelist`, `readsoilpara_namelist`,
+   `readvegpara_namelist`, and `readctrl_namelist` are replaced by no-op stubs.
+   Parameters are instead passed as R function arguments.
 
-3. **`readvegpara_stub.f90`** replaces the full `readvegpara_mod.f90` —
-   provides only the `pft_type` character variable needed by the allocation
-   module, without any file I/O subroutines.
+3. **YASSO initialization climate** — YASSO20 soil pool initialization
+   uses forcing-derived temperature and precipitation defaults instead of
+   fixed stub values, improving spin-up accuracy for site-specific runs.
 
-4. **`allocation_wrappers.f90`** provides standalone (non-module) subroutines
-   `r_alloc_h2` and `r_invert_alloc` with flat scalar argument lists
-   callable via R's `.Fortran()` interface.
+4. **WASM compatibility** — `print`, `write`, `stop`, and `error stop`
+   statements are removed or replaced with silent returns. Key input
+   validation (YASSO fraction bounds, array lengths) is performed on the
+   R side before calling Fortran.
 
-No numerical changes relative to the vendor build with `-freal-4-real-8`.
+5. **`allocation_wrappers.f90`** provides standalone (non-module) subroutines
+   with flat scalar argument lists callable via R's `.Fortran()` interface.
 
 ## Exported Functions
+
+### `svmc_run(...)`
+
+Runs the full SVMC integration loop for a given period: hourly
+photosynthesis and water balance, daily carbon allocation and YASSO20
+soil decomposition.  Returns a list with daily output time series
+(GPP, NEE, soil carbon pools, water balance, etc.).
+See `?svmc_run` for argument details.
 
 ### `alloc_hypothesis_2(...)`
 
@@ -57,13 +71,20 @@ observed LAI changes.  See `?invert_alloc` for argument details.
 ### WASM (WebR) via Docker
 
 The `website/build-webr.sh` script builds the package to WebAssembly
-using the `ghcr.io/r-wasm/webr:main` Docker image and places the
-resulting CRAN-like repo in `website/public/`:
+using the `ghcr.io/r-wasm/webr:main` Docker image. Docker output is
+staged through `tmp/webr-staging/` and copied to `website/public/`:
 
 ```bash
 # From the repo root:
 pnpm build              # builds WASM package + Vite site
 pnpm -C website dev     # dev server at http://localhost:5173
+```
+
+If `website/public/{bin,src}` are root-owned from a previous Docker build,
+run the one-time ownership fix first:
+
+```bash
+sudo website/install-webr.sh
 ```
 
 The script auto-detects whether Docker needs `sudo`. If Docker is not
@@ -134,14 +155,12 @@ If the vendor Fortran source is updated, re-sync the R package copy:
 packages/svmc-webr/sync-sources.sh
 ```
 
-## Extending to Other Submodels
+## Adding Fortran Entry Points
 
-To add more SVMC submodels (e.g., phydro, spafhy, yasso):
+To expose additional Fortran subroutines to R:
 
-1. Copy the needed `.f90` sources into `src/`, applying any `real→real(8)`
-   or I/O-removal fixes.
-2. Add corresponding wrapper subroutines in `src/` with flat argument lists.
-3. Register the new Fortran entry points in `src/init.c`.
-4. Add R wrapper functions in `R/`.
-5. Export in `NAMESPACE`.
-6. Update Makevars module dependency rules.
+1. Add wrapper subroutines in `src/` with flat argument lists.
+2. Register the new Fortran entry points in `src/init.c`.
+3. Add R wrapper functions in `R/`.
+4. Export in `NAMESPACE`.
+5. Update Makevars module dependency rules.

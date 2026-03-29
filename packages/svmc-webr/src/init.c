@@ -27,7 +27,7 @@ extern void F77_NAME(r_invert_alloc)(
     int *, int *);
 
 extern void F77_NAME(r_svmc_run)(
-    /* iparams(7), rparams(45) */
+    /* iparams(7), rparams(48) */
     int *, double *,
     /* hourly climate forcing: 7 arrays */
     double *, double *, double *, double *, double *, double *, double *,

@@ -128,6 +128,17 @@ rm -rf website/public/bin website/public/src
 pnpm build
 ```
 
+If `website/public/{bin,src}` are root-owned from a previous Docker build,
+run the one-time ownership fix first:
+
+```bash
+sudo website/install-webr.sh
+```
+
+The build script (`website/build-webr.sh`) stages Docker output through
+`tmp/webr-staging/` and copies to `website/public/`, so only the one-time
+fix above ever needs `sudo`.
+
 For local development without Docker, you can seed the CRAN repo from a
 CI artifact:
 
