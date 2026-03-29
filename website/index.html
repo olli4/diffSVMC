@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SVMC Allocation — Qvidja Demo</title>
+<title>SVMC — Qvidja Full Model Demo</title>
 <style>
 :root {
   --bg: #f8f9fa; --card: #fff; --border: #dee2e6;
@@ -14,33 +14,36 @@
 body {
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg); color: var(--text);
-  line-height: 1.5; padding: 1rem;
+  line-height: 1.5; padding: 1rem; max-width: 1200px; margin: 0 auto;
 }
 h1 { font-size: 1.4rem; margin-bottom: .25rem; }
 .subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; }
 @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
 .card {
   background: var(--card); border: 1px solid var(--border);
   border-radius: .5rem; padding: 1rem;
 }
-.card h2 { font-size: 1rem; margin-bottom: .75rem; }
+.card h2 { font-size: 1rem; margin-bottom: .5rem; }
+details { margin-bottom: .5rem; }
+details summary {
+  font-size: .85rem; font-weight: 600; cursor: pointer;
+  color: var(--muted); padding: .25rem 0;
+}
+details[open] summary { color: var(--text); }
 label { display: flex; justify-content: space-between; align-items: center;
-  font-size: .85rem; margin-bottom: .35rem; }
-label span { color: var(--muted); }
+  font-size: .8rem; margin-bottom: .25rem; }
 input[type=number], select {
-  width: 9rem; padding: .2rem .4rem; border: 1px solid var(--border);
-  border-radius: .25rem; font-size: .85rem; text-align: right;
+  width: 7.5rem; padding: .15rem .3rem; border: 1px solid var(--border);
+  border-radius: .25rem; font-size: .8rem; text-align: right;
 }
 select { text-align: left; }
 button {
   padding: .5rem 1.25rem; border: none; border-radius: .375rem;
   font-size: .9rem; cursor: pointer; margin-top: .5rem;
 }
-#run-btn { background: var(--accent); color: #fff; }
+#run-btn { background: var(--ok); color: #fff; width: 100%; }
 #run-btn:disabled { opacity: .5; cursor: not-allowed; }
-#sim-btn { background: var(--ok); color: #fff; margin-left: .5rem; }
-#sim-btn:disabled { opacity: .5; cursor: not-allowed; }
 #status {
   margin: .75rem 0; padding: .5rem .75rem; border-radius: .25rem;
   font-size: .85rem; background: #e9ecef;
@@ -48,44 +51,74 @@ button {
 #status.loading { background: #fff3cd; }
 #status.ok { background: #d1e7dd; }
 #status.err { background: #f8d7da; }
-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-th, td { padding: .3rem .5rem; text-align: right; border-bottom: 1px solid var(--border); }
-th { text-align: left; font-weight: 600; }
-td:first-child, th:first-child { text-align: left; }
-#chart-container { margin-top: 1rem; }
-canvas { width: 100% !important; max-height: 300px; }
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+@media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+.chart-box { background: var(--card); border: 1px solid var(--border);
+  border-radius: .5rem; padding: .75rem; }
+.chart-box h3 { font-size: .85rem; margin-bottom: .5rem; color: var(--muted); }
+canvas { width: 100% !important; height: 200px !important; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .5rem;
+  margin-bottom: 1rem; }
+.stat { background: var(--card); border: 1px solid var(--border);
+  border-radius: .375rem; padding: .5rem .75rem; text-align: center; }
+.stat .val { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+.stat .lbl { font-size: .75rem; color: var(--muted); }
 footer { margin-top: 1.5rem; text-align: center; color: var(--muted); font-size: .8rem; }
 footer a { color: var(--accent); }
 </style>
 </head>
 <body>
 
-<h1>SVMC Allocation Model — Qvidja Site Demo</h1>
+<h1>SVMC — Qvidja Site Full Model</h1>
 <p class="subtitle">
-  Carbon allocation via WebR (Fortran → WebAssembly).
-  Qvidja is a Finnish grassland research site with eddy-covariance flux measurements.
+  Full SVMC integration: P-hydro photosynthesis, SpaFHy water balance, YASSO20 soil C,
+  and carbon allocation — all running as Fortran/WebAssembly in the browser via WebR.
 </p>
 <div id="status" class="loading">Initializing WebR…</div>
 
 <div class="grid">
-  <!-- Inputs ---------------------------------------------------------- -->
-  <div class="card">
-    <h2>Input Parameters</h2>
-    <fieldset id="inputs">
-      <legend style="font-size:.85rem;color:var(--muted)">Climate &amp; photosynthesis</legend>
-      <label>temp_day (°C) <input type="number" id="temp_day" value="15" step="0.5"></label>
-      <label>gpp_day (kg C m⁻² s⁻¹) <input type="number" id="gpp_day" value="3e-7" step="1e-8"></label>
-      <label>leaf_rdark_day <input type="number" id="leaf_rdark_day" value="3e-8" step="1e-9"></label>
-    </fieldset>
-    <fieldset style="margin-top:.5rem">
-      <legend style="font-size:.85rem;color:var(--muted)">Carbon pools</legend>
-      <label>cleaf <input type="number" id="cleaf" value="0.1" step="0.01"></label>
-      <label>cstem <input type="number" id="cstem" value="0.02" step="0.01"></label>
-      <label>croot <input type="number" id="croot" value="0.05" step="0.01"></label>
-      <label>cgrain <input type="number" id="cgrain" value="0" step="0.001"></label>
-    </fieldset>
-    <fieldset style="margin-top:.5rem">
-      <legend style="font-size:.85rem;color:var(--muted)">Allometry (from Qvidja namelist)</legend>
+  <!-- Parameters (left sidebar) --------------------------------------- -->
+  <div class="card" style="max-height: 85vh; overflow-y: auto;">
+    <h2>Parameters</h2>
+
+    <details open>
+      <summary>Simulation</summary>
+      <label>Days <input type="number" id="ndays" value="365" min="1" max="3650" step="1"></label>
+      <label>PFT
+        <select id="pft_type_code">
+          <option value="1" selected>grass</option>
+          <option value="2">oat</option>
+        </select>
+      </label>
+      <label>Use obs. LAI
+        <select id="obs_lai">
+          <option value="1" selected>yes</option>
+          <option value="0">no (allocate)</option>
+        </select>
+      </label>
+    </details>
+
+    <details>
+      <summary>Vegetation / hydraulics</summary>
+      <label>conductivity <input type="number" id="conductivity" value="3e-17" step="1e-18"></label>
+      <label>psi50 (MPa) <input type="number" id="psi50" value="-4" step="0.5"></label>
+      <label>b <input type="number" id="b_param" value="2" step="0.5"></label>
+      <label>alpha <input type="number" id="alpha" value="0.08" step="0.01"></label>
+      <label>gamma <input type="number" id="gamma" value="1" step="0.1"></label>
+      <label>rdark <input type="number" id="rdark" value="0" step="0.01"></label>
+    </details>
+
+    <details>
+      <summary>Soil hydrology</summary>
+      <label>soil_depth (m) <input type="number" id="soil_depth" value="0.6" step="0.1"></label>
+      <label>max_poros <input type="number" id="max_poros" value="0.54" step="0.01"></label>
+      <label>fc <input type="number" id="fc" value="0.40" step="0.01"></label>
+      <label>wp <input type="number" id="wp" value="0.12" step="0.01"></label>
+      <label>ksat (m/s) <input type="number" id="ksat" value="2e-6" step="1e-7"></label>
+    </details>
+
+    <details>
+      <summary>Carbon allocation</summary>
       <label>cratio_resp <input type="number" id="cratio_resp" value="0.4" step="0.05"></label>
       <label>cratio_leaf <input type="number" id="cratio_leaf" value="0.8" step="0.05"></label>
       <label>cratio_root <input type="number" id="cratio_root" value="0.2" step="0.05"></label>
@@ -94,63 +127,62 @@ footer a { color: var(--accent); }
       <label>turnover_cleaf <input type="number" id="turnover_cleaf" value="0.001123" step="0.0001"></label>
       <label>turnover_croot <input type="number" id="turnover_croot" value="0.001123" step="0.0001"></label>
       <label>sla <input type="number" id="sla" value="10" step="1"></label>
-      <label>q10 <input type="number" id="q10" value="2" step="0.1"></label>
-      <label>invert_option <input type="number" id="invert_option" value="0" step="1" min="0" max="2"></label>
-    </fieldset>
-    <fieldset style="margin-top:.5rem">
-      <legend style="font-size:.85rem;color:var(--muted)">Management &amp; PFT</legend>
-      <label>management_type
-        <select id="management_type">
-          <option value="0" selected>0 — none</option>
-          <option value="1">1 — harvest</option>
-          <option value="3">3 — compost</option>
-          <option value="4">4 — fertilize</option>
-        </select>
-      </label>
-      <label>management_c_input <input type="number" id="management_c_input" value="0" step="1e-9"></label>
-      <label>management_c_output <input type="number" id="management_c_output" value="0" step="1e-9"></label>
-      <label>pft_type
-        <select id="pft_type_code">
-          <option value="1" selected>grass</option>
-          <option value="2">oat</option>
-          <option value="0">other</option>
-        </select>
-      </label>
-      <label>pheno_stage
-        <select id="pheno_stage">
-          <option value="1" selected>1 — growth</option>
-          <option value="2">2 — dormancy</option>
-        </select>
-      </label>
-    </fieldset>
-    <div style="margin-top:.75rem">
-      <button id="run-btn" disabled>Run single step</button>
-      <button id="sim-btn" disabled>Simulate 365 days</button>
-    </div>
+      <label>q10 <input type="number" id="q10" value="1" step="0.1"></label>
+    </details>
+
+    <details>
+      <summary>YASSO20 soil carbon</summary>
+      <label>initial SOC (kg/m²) <input type="number" id="yasso_totc" value="16" step="1"></label>
+      <label>C:N input <input type="number" id="yasso_cn_input" value="50" step="5"></label>
+      <label>fract root input <input type="number" id="yasso_fract_root" value="0.5" step="0.1"></label>
+      <label>fract legacy SOC <input type="number" id="yasso_fract_legacy" value="0" step="0.1"></label>
+    </details>
+
+    <details>
+      <summary>Climate forcing</summary>
+      <p style="font-size:.75rem;color:var(--muted);margin-bottom:.25rem">
+        Synthetic seasonal cycle for Qvidja (60°N). Adjust mean values:
+      </p>
+      <label>mean temp (°C) <input type="number" id="clim_temp" value="6" step="1"></label>
+      <label>temp amplitude <input type="number" id="clim_tamp" value="14" step="1"></label>
+      <label>mean Rg (W/m²) <input type="number" id="clim_rg" value="300" step="25"></label>
+      <label>mean precip (mm/d) <input type="number" id="clim_prec" value="1.8" step="0.1"></label>
+      <label>mean VPD (Pa) <input type="number" id="clim_vpd" value="600" step="50"></label>
+      <label>CO₂ (ppm) <input type="number" id="clim_co2" value="420" step="10"></label>
+    </details>
+
+    <button id="run-btn" disabled>Run SVMC</button>
   </div>
 
-  <!-- Outputs --------------------------------------------------------- -->
-  <div class="card">
-    <h2>Output</h2>
-    <table>
-      <thead><tr><th>Variable</th><th>Value</th></tr></thead>
-      <tbody id="result-body">
-        <tr><td colspan="2" style="color:var(--muted);text-align:center">
-          Run the model to see results</td></tr>
-      </tbody>
-    </table>
-    <div id="chart-container" style="display:none">
-      <h2 style="margin-top:1rem">365-Day Simulation</h2>
-      <canvas id="chart"></canvas>
+  <!-- Results (right panel) ------------------------------------------- -->
+  <div>
+    <div class="summary-grid" id="summary" style="display:none">
+      <div class="stat"><div class="val" id="s-gpp">—</div><div class="lbl">Total GPP (g C/m²/yr)</div></div>
+      <div class="stat"><div class="val" id="s-nee">—</div><div class="lbl">Total NEE (g C/m²/yr)</div></div>
+      <div class="stat"><div class="val" id="s-soilc">—</div><div class="lbl">Final SOC (kg/m²)</div></div>
+      <div class="stat"><div class="val" id="s-lai">—</div><div class="lbl">Peak LAI</div></div>
+      <div class="stat"><div class="val" id="s-et">—</div><div class="lbl">Total ET (mm/yr)</div></div>
+      <div class="stat"><div class="val" id="s-cleaf">—</div><div class="lbl">Peak C_leaf (g/m²)</div></div>
+    </div>
+    <div class="chart-grid" id="charts" style="display:none">
+      <div class="chart-box"><h3>GPP &amp; NEE (daily)</h3><canvas id="ch-flux"></canvas></div>
+      <div class="chart-box"><h3>Carbon pools (daily)</h3><canvas id="ch-pools"></canvas></div>
+      <div class="chart-box"><h3>Soil carbon (YASSO20)</h3><canvas id="ch-soilc"></canvas></div>
+      <div class="chart-box"><h3>Soil moisture &amp; SWE (hourly)</h3><canvas id="ch-water"></canvas></div>
+      <div class="chart-box"><h3>Hourly GPP &amp; transpiration</h3><canvas id="ch-hourly"></canvas></div>
+      <div class="chart-box"><h3>Stomatal conductance (hourly)</h3><canvas id="ch-gs"></canvas></div>
+    </div>
+    <div id="placeholder" class="card" style="text-align:center;color:var(--muted);padding:3rem">
+      Run the model to see results
     </div>
   </div>
 </div>
 
 <footer>
   <a href="https://github.com/olli4/diffSVMC">diffSVMC</a> —
-  Fortran allocation model compiled to WebAssembly via
+  Full SVMC Fortran model compiled to WebAssembly via
   <a href="https://docs.r-wasm.org/webr/latest/">WebR</a>.
-  Data from the Qvidja grassland research site, Finland.
+  Synthetic climate forcing for the Qvidja grassland site, Finland (60.3°N, 22.4°E).
 </footer>
 
 <!-- WebR + Chart.js --------------------------------------------------- -->
@@ -160,7 +192,6 @@ import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
 
 const status = document.getElementById("status");
 const runBtn = document.getElementById("run-btn");
-const simBtn = document.getElementById("sim-btn");
 
 // ---- boot WebR & install SVMCwebr ----
 status.textContent = "Loading WebR runtime…";
@@ -174,202 +205,309 @@ await webR.installPackages(["SVMCwebr"], {
 await webR.evalRVoid("library(SVMCwebr)");
 
 status.className = "ok";
-status.textContent = "Ready — SVMCwebr loaded.";
+status.textContent = "Ready — SVMCwebr loaded. Click 'Run SVMC' to simulate.";
 runBtn.disabled = false;
-simBtn.disabled = false;
 
 // ---- helpers ----
 function repoUrl() {
-  // In production the demo is deployed under <pages-root>/demo/ and the
-  // CRAN-like repo sits at <pages-root>/.  In local dev the Vite proxy
-  // forwards /bin and /src to the extracted artifact.
   const loc = window.location;
   if (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") {
     return loc.origin;
   }
-  // Strip /demo/… suffix to reach the pages root where bin/ and src/ live.
   return loc.origin + loc.pathname.replace(/\/demo\/?.*$/, "/");
 }
 
-function readInputs() {
-  const ids = [
-    "temp_day","gpp_day","leaf_rdark_day",
-    "cleaf","cstem","croot","cgrain",
-    "cratio_resp","cratio_leaf","cratio_root","cratio_biomass",
-    "harvest_index","turnover_cleaf","turnover_croot",
-    "sla","q10","invert_option",
-    "management_type","management_c_input","management_c_output",
-    "pft_type_code","pheno_stage"
-  ];
-  const vals = {};
-  for (const id of ids) {
-    const el = document.getElementById(id);
-    vals[id] = el.tagName === "SELECT" ? parseInt(el.value) : parseFloat(el.value);
+function val(id) {
+  const el = document.getElementById(id);
+  return el.tagName === "SELECT" ? parseInt(el.value) : parseFloat(el.value);
+}
+
+/** Generate synthetic hourly climate forcing for Qvidja. */
+function generateForcing(ndays) {
+  const nhours = ndays * 24;
+  const meanT = val("clim_temp");
+  const ampT  = val("clim_tamp");
+  const meanRg = val("clim_rg");
+  const meanPrec = val("clim_prec");
+  const meanVpd = val("clim_vpd");
+  const co2ppm = val("clim_co2");
+
+  const temp = new Float64Array(nhours);
+  const rg   = new Float64Array(nhours);
+  const prec = new Float64Array(nhours);
+  const vpd  = new Float64Array(nhours);
+  const pres = new Float64Array(nhours);
+  const co2  = new Float64Array(nhours);
+  const wind = new Float64Array(nhours);
+  const lai  = new Float64Array(ndays);
+  const snow = new Float64Array(ndays);
+  const sm   = new Float64Array(ndays);
+
+  for (let h = 0; h < nhours; h++) {
+    const doy = Math.floor(h / 24);
+    const hod = h % 24;
+    // seasonal temperature with diurnal cycle
+    const tSeason = meanT + ampT * Math.sin(2 * Math.PI * (doy - 80) / 365);
+    const tDiurnal = 4 * Math.sin(2 * Math.PI * (hod - 6) / 24);
+    temp[h] = tSeason + tDiurnal + 273.15;  // K
+
+    // solar radiation with seasonal & diurnal pattern
+    const dayLen = 12 + 6 * Math.sin(2 * Math.PI * (doy - 80) / 365);
+    const sunrise = 12 - dayLen / 2;
+    const sunset  = 12 + dayLen / 2;
+    if (hod >= sunrise && hod <= sunset) {
+      const frac = (hod - sunrise) / (sunset - sunrise);
+      const rgSeason = meanRg * (0.5 + 0.5 * Math.sin(2 * Math.PI * (doy - 80) / 365));
+      rg[h] = Math.max(0, rgSeason * Math.sin(Math.PI * frac));
+    }
+
+    // precipitation: seasonal with some randomness
+    const precSeason = meanPrec * (0.8 + 0.4 * Math.cos(2 * Math.PI * (doy - 200) / 365));
+    prec[h] = precSeason / 24 / 3600;  // mm/d -> mm/s
+
+    // VPD: higher in summer, minimal at low temp
+    const tC = temp[h] - 273.15;
+    vpd[h] = Math.max(50, meanVpd * Math.max(0, tC / 20) *
+             (0.6 + 0.4 * Math.sin(2 * Math.PI * (hod - 6) / 24)));
+
+    pres[h] = 101325;
+    co2[h]  = co2ppm * 1e-6;  // ppm -> fraction
+    wind[h] = 2.5 + 1.5 * Math.sin(2 * Math.PI * hod / 24 + 1);
   }
-  return vals;
-}
 
-function renderTable(obj) {
-  const tbody = document.getElementById("result-body");
-  const keys = [
-    "npp_day","auto_resp","cleaf","cstem","croot","cgrain",
-    "lai","litter_cleaf","litter_croot","compost",
-    "abovebiomass","belowbiomass","yield_val","grain_fill","pheno_stage"
-  ];
-  tbody.innerHTML = keys
-    .map(k => {
-      const v = obj[k];
-      const fmt = v === undefined ? "—" : Number(v).toExponential(6);
-      return `<tr><td>${k}</td><td>${fmt}</td></tr>`;
-    })
-    .join("");
-}
-
-async function callAlloc(p) {
-  const res = await webR.evalR(`
-    r <- alloc_hypothesis_2(
-      temp_day = ${p.temp_day},
-      gpp_day  = ${p.gpp_day},
-      leaf_rdark_day = ${p.leaf_rdark_day},
-      cleaf = ${p.cleaf}, cstem = ${p.cstem}, croot = ${p.croot},
-      cgrain = ${p.cgrain},
-      cratio_resp = ${p.cratio_resp}, cratio_leaf = ${p.cratio_leaf},
-      cratio_root = ${p.cratio_root}, cratio_biomass = ${p.cratio_biomass},
-      harvest_index = ${p.harvest_index},
-      turnover_cleaf = ${p.turnover_cleaf}, turnover_croot = ${p.turnover_croot},
-      sla = ${p.sla}, q10 = ${p.q10}, invert_option = ${p.invert_option},
-      management_type = ${p.management_type}L,
-      management_c_input = ${p.management_c_input},
-      management_c_output = ${p.management_c_output},
-      pft_type_code = ${p.pft_type_code}L,
-      pheno_stage = ${p.pheno_stage}L
-    )
-    as.list(r)
-  `);
-  const out = {};
-  const names = await (await res.names()).toArray();
-  for (const n of names) {
-    const val = await (await res.get(n)).toNumber();
-    out[n] = val;
+  // daily LAI: seasonal deciduous pattern
+  for (let d = 0; d < ndays; d++) {
+    const tDay = meanT + ampT * Math.sin(2 * Math.PI * (d - 80) / 365);
+    // simple phenology: LAI follows temperature
+    lai[d] = Math.max(0.1, 3.0 * Math.max(0, Math.min(1, (tDay - 2) / 18)));
+    snow[d] = tDay < -2 ? Math.max(0, 0.15 * (-tDay - 2)) : 0;
+    sm[d] = 0.35;  // constant observed soil moisture
   }
-  return out;
+
+  return { nhours, temp, rg, prec, vpd, pres, co2, wind, lai, snow, sm };
 }
 
-// ---- single step ----
+/** Convert a JS Float64Array to an R vector string. */
+function toRVec(arr) {
+  // For large arrays, use c(...) with comma-separated values
+  return "c(" + Array.from(arr).join(",") + ")";
+}
+
+// ---- chart management ----
+const charts = {};
+function makeChart(canvasId, config) {
+  if (charts[canvasId]) charts[canvasId].destroy();
+  const ctx = document.getElementById(canvasId).getContext("2d");
+  charts[canvasId] = new Chart(ctx, config);
+}
+
+function lineDataset(label, data, color, yAxisID = "y") {
+  return { label, data, borderColor: color, borderWidth: 1.5,
+           pointRadius: 0, tension: 0.1, yAxisID };
+}
+
+function chartOpts(xLabel, yLabel, y2Label) {
+  const scales = {
+    x: { title: { display: true, text: xLabel }, ticks: { maxTicksLimit: 12 } },
+    y: { title: { display: true, text: yLabel }, position: "left" },
+  };
+  if (y2Label) {
+    scales.y2 = { title: { display: true, text: y2Label }, position: "right",
+                  grid: { drawOnChartArea: false } };
+  }
+  return { responsive: true, maintainAspectRatio: false,
+           interaction: { mode: "index", intersect: false },
+           scales, plugins: { legend: { labels: { boxWidth: 12, font: { size: 11 } } } } };
+}
+
+// ---- run simulation ----
 runBtn.addEventListener("click", async () => {
   runBtn.disabled = true;
   status.className = "loading";
-  status.textContent = "Running…";
+
+  const ndays = val("ndays");
+  status.textContent = `Generating ${ndays}-day forcing…`;
+
   try {
-    const p = readInputs();
-    const out = await callAlloc(p);
-    renderTable(out);
-    status.className = "ok";
-    status.textContent = "Done.";
-  } catch (e) {
-    status.className = "err";
-    status.textContent = "Error: " + e.message;
-  }
-  runBtn.disabled = false;
-});
+    const f = generateForcing(ndays);
 
-// ---- 365-day simulation ----
-let chart = null;
-simBtn.addEventListener("click", async () => {
-  simBtn.disabled = true;
-  status.className = "loading";
-  status.textContent = "Simulating 365 days…";
-  try {
-    const p = readInputs();
-    const days = 365;
-    const series = { lai: [], cleaf: [], cstem: [], croot: [], npp: [] };
-    // evolve state
-    let state = { ...p, npp_day: 0, auto_resp: 0,
-      litter_cleaf: 0, litter_croot: 0, compost: 0,
-      lai: p.cleaf * p.sla,
-      abovebiomass: 0, belowbiomass: 0, yield_val: 0, grain_fill: 0 };
+    status.textContent = "Running SVMC (Fortran)…";
 
-    for (let d = 0; d < days; d++) {
-      // simple seasonal temperature: 15 ± 12 °C
-      const T = 15 + 12 * Math.sin(2 * Math.PI * (d - 80) / 365);
-      // simple seasonal GPP: peak mid-summer
-      const gppScale = Math.max(0, Math.sin(Math.PI * Math.max(0, T) / 30));
-      const gpp = p.gpp_day * gppScale;
-      const rdark = p.leaf_rdark_day * gppScale;
+    // Build R call
+    const rCode = `
+      result <- svmc_run(
+        nhours = ${f.nhours}L, ndays = ${ndays}L,
+        temp_hr = ${toRVec(f.temp)},
+        rg_hr = ${toRVec(f.rg)},
+        prec_hr = ${toRVec(f.prec)},
+        vpd_hr = ${toRVec(f.vpd)},
+        pres_hr = ${toRVec(f.pres)},
+        co2_hr = ${toRVec(f.co2)},
+        wind_hr = ${toRVec(f.wind)},
+        lai_day = ${toRVec(f.lai)},
+        snowdepth_day = ${toRVec(f.snow)},
+        soilmoist_day = ${toRVec(f.sm)},
+        obs_lai = ${val("obs_lai") ? "TRUE" : "FALSE"},
+        obs_soilmoist = TRUE,
+        conductivity = ${val("conductivity")},
+        psi50 = ${val("psi50")},
+        b = ${val("b_param")},
+        alpha = ${val("alpha")},
+        gamma = ${val("gamma")},
+        rdark = ${val("rdark")},
+        pft_type_code = ${val("pft_type_code")}L,
+        soil_depth = ${val("soil_depth")},
+        max_poros = ${val("max_poros")},
+        fc = ${val("fc")},
+        wp = ${val("wp")},
+        ksat = ${val("ksat")},
+        cratio_resp = ${val("cratio_resp")},
+        cratio_leaf = ${val("cratio_leaf")},
+        cratio_root = ${val("cratio_root")},
+        cratio_biomass = ${val("cratio_biomass")},
+        harvest_index = ${val("harvest_index")},
+        turnover_cleaf = ${val("turnover_cleaf")},
+        turnover_croot = ${val("turnover_croot")},
+        sla = ${val("sla")},
+        q10 = ${val("q10")},
+        yasso_totc = ${val("yasso_totc")},
+        yasso_cn_input = ${val("yasso_cn_input")},
+        yasso_fract_root = ${val("yasso_fract_root")},
+        yasso_fract_legacy = ${val("yasso_fract_legacy")}
+      )
+      # Return as flat named list of vectors
+      result
+    `;
 
-      const call = {
-        ...p,
-        temp_day: T,
-        gpp_day: gpp,
-        leaf_rdark_day: rdark,
-        cleaf: state.cleaf,
-        cstem: state.cstem,
-        croot: state.croot,
-        cgrain: state.cgrain || 0,
-      };
+    const rObj = await webR.evalR(rCode);
 
-      const out = await callAlloc(call);
-      state.cleaf = out.cleaf;
-      state.cstem = out.cstem;
-      state.croot = out.croot;
-      state.cgrain = out.cgrain;
-      state.lai = out.lai;
+    // Extract arrays from R list
+    const getVec = async (name) => {
+      const v = await rObj.get(name);
+      return await v.toArray();
+    };
 
-      series.lai.push(out.lai);
-      series.cleaf.push(out.cleaf);
-      series.cstem.push(out.cstem);
-      series.croot.push(out.croot);
-      series.npp.push(out.npp_day);
+    status.textContent = "Extracting results…";
 
-      if (d % 30 === 0) {
-        status.textContent = `Simulating… day ${d + 1}/${days}`;
-      }
+    const [gpp_hr, gs_hr, tr_hr, le_hr, soilmoist_hr, swe_hr, psi_soil_hr,
+           gpp_day, nee_day, npp_day, hetero_resp, auto_resp,
+           cleaf, croot, cstem, soil_c, above_bio, below_bio, lai_alloc] =
+      await Promise.all([
+        getVec("gpp_hr"), getVec("gs_hr"), getVec("tr_hr"), getVec("le_hr"),
+        getVec("soilmoist_hr"), getVec("swe_hr"), getVec("psi_soil_hr"),
+        getVec("gpp_day"), getVec("nee_day"), getVec("npp_day"),
+        getVec("hetero_resp"), getVec("auto_resp"),
+        getVec("cleaf"), getVec("croot"), getVec("cstem"),
+        getVec("soil_c"), getVec("above_bio"), getVec("below_bio"),
+        getVec("lai_alloc"),
+      ]);
+
+    // ---- Summary stats ----
+    // GPP/NEE: model outputs are in kg C m-2 s-1, sum daily means * 86400 * 1000 for g/m2/yr
+    const totalGPP = gpp_day.reduce((s, v) => s + v, 0) * 86400 * 1000;
+    const totalNEE = nee_day.reduce((s, v) => s + v, 0) * 86400 * 1000;
+    const finalSOC = soil_c[soil_c.length - 1];
+    const peakLAI  = Math.max(...f.lai);
+    const totalET  = tr_hr.reduce((s, v) => s + v, 0) * 3600 * 1000; // m/s -> mm total
+    const peakCleaf = Math.max(...cleaf) * 1000; // kg -> g
+
+    document.getElementById("summary").style.display = "";
+    document.getElementById("s-gpp").textContent = totalGPP.toFixed(1);
+    document.getElementById("s-nee").textContent = totalNEE.toFixed(1);
+    document.getElementById("s-soilc").textContent = finalSOC.toFixed(2);
+    document.getElementById("s-lai").textContent = peakLAI.toFixed(2);
+    document.getElementById("s-et").textContent = totalET.toFixed(1);
+    document.getElementById("s-cleaf").textContent = peakCleaf.toFixed(2);
+
+    // ---- Charts ----
+    document.getElementById("charts").style.display = "";
+    document.getElementById("placeholder").style.display = "none";
+    const dayLabels = Array.from({ length: ndays }, (_, i) => i + 1);
+    // For hourly charts, subsample to daily resolution for readability
+    const hourStep = Math.max(1, Math.floor(f.nhours / 2000));
+    const hrLabels = [];
+    const gppSub = [], trSub = [], smSub = [], sweSub = [], gsSub = [];
+    for (let i = 0; i < f.nhours; i += hourStep) {
+      hrLabels.push((i / 24).toFixed(1));
+      gppSub.push(gpp_hr[i] * 1e6 * 1000);  // kg C m-2 s-1 -> µmol m-2 s-1 (approx)
+      trSub.push(tr_hr[i] * 1000 * 3600);    // m/s -> mm/hr
+      smSub.push(soilmoist_hr[i]);
+      sweSub.push(swe_hr[i] * 1000);          // m -> mm
+      gsSub.push(gs_hr[i]);
     }
 
-    // render chart
-    document.getElementById("chart-container").style.display = "";
-    if (chart) chart.destroy();
-    const ctx = document.getElementById("chart").getContext("2d");
-    chart = new Chart(ctx, {
+    // 1. Flux chart (daily GPP & NEE)
+    const gppDay_g = gpp_day.map(v => v * 86400 * 1000);
+    const neeDay_g = nee_day.map(v => v * 86400 * 1000);
+    makeChart("ch-flux", {
       type: "line",
-      data: {
-        labels: Array.from({ length: days }, (_, i) => i + 1),
-        datasets: [
-          { label: "LAI", data: series.lai, borderWidth: 2, pointRadius: 0,
-            borderColor: "#198754", yAxisID: "y" },
-          { label: "C_leaf", data: series.cleaf, borderWidth: 1.5, pointRadius: 0,
-            borderColor: "#0d6efd", yAxisID: "y" },
-          { label: "C_root", data: series.croot, borderWidth: 1.5, pointRadius: 0,
-            borderColor: "#6f42c1", yAxisID: "y" },
-        ],
-      },
-      options: {
-        responsive: true,
-        interaction: { mode: "index", intersect: false },
-        scales: {
-          x: { title: { display: true, text: "Day of year" } },
-          y: { title: { display: true, text: "Value" }, position: "left" },
-        },
-      },
+      data: { labels: dayLabels, datasets: [
+        lineDataset("GPP", gppDay_g, "#198754"),
+        lineDataset("NEE", neeDay_g, "#dc3545"),
+      ]},
+      options: chartOpts("Day", "g C m⁻² d⁻¹"),
     });
 
-    // also show last-day table
-    renderTable({
-      npp_day: series.npp[days - 1],
-      cleaf: series.cleaf[days - 1],
-      cstem: series.cstem[days - 1],
-      croot: series.croot[days - 1],
-      lai: series.lai[days - 1],
+    // 2. Carbon pools (daily)
+    const cleaf_g = cleaf.map(v => v * 1000);
+    const croot_g = croot.map(v => v * 1000);
+    const cstem_g = cstem.map(v => v * 1000);
+    makeChart("ch-pools", {
+      type: "line",
+      data: { labels: dayLabels, datasets: [
+        lineDataset("C_leaf", cleaf_g, "#198754"),
+        lineDataset("C_root", croot_g, "#6f42c1"),
+        lineDataset("C_stem", cstem_g, "#fd7e14"),
+      ]},
+      options: chartOpts("Day", "g C m⁻²"),
+    });
+
+    // 3. Soil carbon
+    makeChart("ch-soilc", {
+      type: "line",
+      data: { labels: dayLabels, datasets: [
+        lineDataset("Soil C (YASSO20)", soil_c, "#795548"),
+      ]},
+      options: chartOpts("Day", "kg C m⁻²"),
+    });
+
+    // 4. Soil moisture & SWE (hourly subsampled)
+    makeChart("ch-water", {
+      type: "line",
+      data: { labels: hrLabels, datasets: [
+        lineDataset("Soil moisture", smSub, "#0d6efd"),
+        lineDataset("SWE (mm)", sweSub, "#6c757d", "y2"),
+      ]},
+      options: chartOpts("Day", "m³/m³", "mm SWE"),
+    });
+
+    // 5. Hourly GPP & transpiration
+    makeChart("ch-hourly", {
+      type: "line",
+      data: { labels: hrLabels, datasets: [
+        lineDataset("GPP (µmol/m²/s)", gppSub, "#198754"),
+        lineDataset("Tr (mm/hr)", trSub, "#0dcaf0", "y2"),
+      ]},
+      options: chartOpts("Day", "µmol m⁻² s⁻¹", "mm hr⁻¹"),
+    });
+
+    // 6. Stomatal conductance
+    makeChart("ch-gs", {
+      type: "line",
+      data: { labels: hrLabels, datasets: [
+        lineDataset("gs (mol/m²/s)", gsSub, "#e91e63"),
+      ]},
+      options: chartOpts("Day", "mol m⁻² s⁻¹"),
     });
 
     status.className = "ok";
-    status.textContent = `Simulation complete — ${days} daily steps.`;
+    status.textContent = `Done — ${ndays} days (${f.nhours} hourly steps) simulated.`;
   } catch (e) {
     status.className = "err";
     status.textContent = "Error: " + e.message;
     console.error(e);
   }
-  simBtn.disabled = false;
+  runBtn.disabled = false;
 });
 </script>
 </body>
