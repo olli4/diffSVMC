@@ -1,0 +1,40 @@
+# Build the SVMCwebr R package for WebR (WebAssembly) and deploy
+# as a CRAN-like repository to GitHub Pages.
+#
+# Uses the r-wasm/actions reusable workflow, which:
+#   1. Checks out this repo
+#   2. Builds the R package inside the ghcr.io/r-wasm/webr Docker image
+#   3. Creates a CRAN-like repo structure in _site/
+#   4. Deploys to GitHub Pages
+#
+# Prerequisites:
+#   - Enable GitHub Pages in repo settings:
+#     Settings > Pages > Build and deployment > Source: GitHub Actions
+#
+# After deployment, install in WebR with:
+#   install.packages("SVMCwebr",
+#     repos = c("https://<owner>.github.io/diffSVMC/",
+#               "https://repo.r-wasm.org/"))
+
+name: Build WebR Package
+
+on:
+  # Manual trigger for testing / on-demand builds
+  workflow_dispatch: {}
+  # Also build on pushes that touch the R package
+  push:
+    branches: [main]
+    paths:
+      - "packages/svmc-webr/**"
+      - ".github/workflows/webr-build.yml"
+
+jobs:
+  build-webr:
+    uses: r-wasm/actions/.github/workflows/deploy-cran-repo.yml@v2
+    with:
+      packages: "local::packages/svmc-webr"
+      compress: true
+    permissions:
+      repository-projects: read
+      pages: write
+      id-token: write

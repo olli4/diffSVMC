@@ -1,0 +1,3 @@
+useDynLib(SVMCwebr, .registration = TRUE)
+export(alloc_hypothesis_2)
+export(invert_alloc)

@@ -1,0 +1,3 @@
+# Module dependency ordering for Fortran compilation
+allocation.o: readvegpara_stub.o
+allocation_wrappers.o: allocation.o readvegpara_stub.o

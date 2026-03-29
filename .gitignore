@@ -29,5 +29,11 @@ packages/svmc-ref/harness
 packages/svmc-ref/fixtures.jsonl
 packages/svmc-ref/fixtures.jsonl.makefile_backup
 
+# R package build artifacts
+packages/svmc-webr/src/*.o
+packages/svmc-webr/src/*.mod
+packages/svmc-webr/src/*.so
+packages/svmc-webr/src/*.dll
+
 # Vitest browser-mode screenshot artifacts
 __screenshots__/
