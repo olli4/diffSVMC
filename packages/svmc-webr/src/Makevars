@@ -1,12 +1,14 @@
 # Full SVMC build for R package.
 # Build order respects Fortran module dependencies.
-# -freal-4-real-8 matches the vendor build flag, promoting all REAL(4)
-# to REAL(8) without affecting DOUBLE PRECISION.
-# PKG_FFLAGS applies to .f files, PKG_FCFLAGS applies to .f90 files.
-.PHONY: all
+#
+# The model .f90 files use `real` which must be promoted to 8-byte
+# to match the vendor build.  -fdefault-real-8 promotes default REAL
+# to REAL(8); pair with -fdefault-double-8 so DOUBLE PRECISION stays
+# at REAL(8) (without it, gfortran/flang would promote DP to REAL(16)).
+# Works for both gfortran (native) and flang (WebR/WASM).
 
-PKG_FFLAGS  = -freal-4-real-8
-PKG_FCFLAGS = -freal-4-real-8
+PKG_FFLAGS  = -fdefault-real-8 -fdefault-double-8
+PKG_FCFLAGS = -fdefault-real-8 -fdefault-double-8
 
 OBJECTS = readctrl_stub.o readvegpara_stub.o readsoilpara_stub.o \
           blas.o linpack.o lbfgsb.o timer.o \

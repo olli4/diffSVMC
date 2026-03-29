@@ -36,6 +36,11 @@ else
   exit 1
 fi
 
+# Clean stale native build artifacts so the Docker cross-compile starts fresh.
+rm -f "$REPO_ROOT"/packages/svmc-webr/src/*.o \
+     "$REPO_ROOT"/packages/svmc-webr/src/*.mod \
+     "$REPO_ROOT"/packages/svmc-webr/src/*.so
+
 echo "Building SVMCwebr WASM package via Docker…"
 $DOCKER run --rm \
   -v "$REPO_ROOT":/work \
