@@ -73,20 +73,30 @@ footer a { color: var(--accent); }
 <p class="subtitle">
   Full SVMC integration: P-hydro photosynthesis, SpaFHy water balance, YASSO20 soil C,
   and carbon allocation — all running as Fortran/WebAssembly in the browser via WebR.
+  This demo replays the vendored Qvidja reference inputs used for the maintained
+  SVMC v1.0.0 test case rather than synthetic forcing.
 </p>
 <div id="status" class="loading">Initializing WebR…</div>
 
 <div class="grid">
   <!-- Parameters (left sidebar) --------------------------------------- -->
   <div class="card" style="max-height: 85vh; overflow-y: auto;">
-    <h2>Parameters</h2>
+    <h2>Reference Inputs &amp; Model Settings</h2>
+    <p style="font-size:.78rem;color:var(--muted);margin-bottom:.75rem">
+      The fields below define the inputs to the simulation: replayed Qvidja forcing and
+      management series, plus editable SVMC parameter values.
+    </p>
 
     <details open>
-      <summary>Simulation</summary>
+      <summary>Run Window &amp; Input Selection</summary>
       <label>Days <input type="number" id="ndays" value="365" min="1" max="3650" step="1"></label>
+      <p id="reference-period" style="font-size:.75rem;color:var(--muted);margin:.25rem 0 0">
+        Loading Qvidja reference replay metadata…
+      </p>
       <label>PFT
         <select id="pft_type_code">
           <option value="1" selected>grass</option>
+          <option value="0">other</option>
           <option value="2">oat</option>
         </select>
       </label>
@@ -139,16 +149,14 @@ footer a { color: var(--accent); }
     </details>
 
     <details>
-      <summary>Climate forcing</summary>
+      <summary>Reference forcing</summary>
       <p style="font-size:.75rem;color:var(--muted);margin-bottom:.25rem">
-        Synthetic seasonal cycle for Qvidja (60°N). Adjust mean values:
+        Uses the vendored Qvidja NetCDF reference inputs from the maintained SVMC v1.0.0
+        test setup: hourly ERA5-Land forcing, daily Sentinel-2 LAI, and daily management.
       </p>
-      <label>mean temp (°C) <input type="number" id="clim_temp" value="6" step="1"></label>
-      <label>temp amplitude <input type="number" id="clim_tamp" value="14" step="1"></label>
-      <label>mean Rg (W/m²) <input type="number" id="clim_rg" value="300" step="25"></label>
-      <label>mean precip (mm/d) <input type="number" id="clim_prec" value="1.8" step="0.1"></label>
-      <label>mean VPD (Pa) <input type="number" id="clim_vpd" value="600" step="50"></label>
-      <label>CO₂ (ppm) <input type="number" id="clim_co2" value="420" step="10"></label>
+      <p id="reference-source" style="font-size:.75rem;color:var(--muted);margin:.25rem 0 0">
+        Loading reference source details…
+      </p>
     </details>
 
     <button id="run-btn" disabled>Run SVMC</button>
@@ -156,12 +164,19 @@ footer a { color: var(--accent); }
 
   <!-- Results (right panel) ------------------------------------------- -->
   <div>
+    <div class="card" style="margin-bottom:.75rem">
+      <h2>Simulated Model Outputs</h2>
+      <p style="font-size:.78rem;color:var(--muted)">
+        These summaries and charts are produced by running the SVMC model in WebR/Fortran
+        on the selected reference inputs. They are not prerecorded output files.
+      </p>
+    </div>
     <div class="summary-grid" id="summary" style="display:none">
-      <div class="stat"><div class="val" id="s-gpp">—</div><div class="lbl">Total GPP (g C/m²/yr)</div></div>
-      <div class="stat"><div class="val" id="s-nee">—</div><div class="lbl">Total NEE (g C/m²/yr)</div></div>
+      <div class="stat"><div class="val" id="s-gpp">—</div><div class="lbl">Mean Annual GPP (g C/m²/yr)</div></div>
+      <div class="stat"><div class="val" id="s-nee">—</div><div class="lbl">Mean Annual NEE (g C/m²/yr)</div></div>
       <div class="stat"><div class="val" id="s-soilc">—</div><div class="lbl">Final SOC (kg/m²)</div></div>
       <div class="stat"><div class="val" id="s-lai">—</div><div class="lbl">Peak LAI</div></div>
-      <div class="stat"><div class="val" id="s-et">—</div><div class="lbl">Total ET (mm/yr)</div></div>
+      <div class="stat"><div class="val" id="s-et">—</div><div class="lbl">Mean Annual ET (mm/yr)</div></div>
       <div class="stat"><div class="val" id="s-cleaf">—</div><div class="lbl">Peak C_leaf (g/m²)</div></div>
     </div>
     <div class="chart-grid" id="charts" style="display:none">
@@ -173,7 +188,7 @@ footer a { color: var(--accent); }
       <div class="chart-box"><h3>Stomatal conductance (hourly)</h3><canvas id="ch-gs"></canvas></div>
     </div>
     <div id="placeholder" class="card" style="text-align:center;color:var(--muted);padding:3rem">
-      Run the model to see results
+      Run the model to generate simulated outputs from the selected reference inputs
     </div>
   </div>
 </div>
@@ -182,7 +197,8 @@ footer a { color: var(--accent); }
   <a href="https://github.com/olli4/diffSVMC">diffSVMC</a> —
   Full SVMC Fortran model compiled to WebAssembly via
   <a href="https://docs.r-wasm.org/webr/latest/">WebR</a>.
-  Synthetic climate forcing for the Qvidja grassland site, Finland (60.3°N, 22.4°E).
+  Replays the vendored Qvidja reference inputs for the maintained SVMC v1.0.0 test case
+  (2018-05-10 to 2022-12-31).
 </footer>
 
 <!-- WebR + Chart.js --------------------------------------------------- -->
@@ -192,6 +208,8 @@ import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
 
 const status = document.getElementById("status");
 const runBtn = document.getElementById("run-btn");
+const referencePeriod = document.getElementById("reference-period");
+const referenceSource = document.getElementById("reference-source");
 
 // ---- boot WebR & install SVMCwebr ----
 status.textContent = "Loading WebR runtime…";
@@ -204,8 +222,12 @@ await webR.installPackages(["SVMCwebr"], {
 });
 await webR.evalRVoid("library(SVMCwebr)");
 
+status.textContent = "Loading Qvidja reference inputs…";
+const referenceData = await loadReferenceData();
+applyReferenceDefaults(referenceData);
+
 status.className = "ok";
-status.textContent = "Ready — SVMCwebr loaded. Click 'Run SVMC' to simulate.";
+status.textContent = "Ready — reference inputs loaded and SVMCwebr is available. Click 'Run SVMC' to simulate model outputs.";
 runBtn.disabled = false;
 
 // ---- helpers ----
@@ -222,69 +244,80 @@ function val(id) {
   return el.tagName === "SELECT" ? parseInt(el.value) : parseFloat(el.value);
 }
 
-/** Generate synthetic hourly climate forcing for Qvidja. */
-function generateForcing(ndays) {
-  const nhours = ndays * 24;
-  const meanT = val("clim_temp");
-  const ampT  = val("clim_tamp");
-  const meanRg = val("clim_rg");
-  const meanPrec = val("clim_prec");
-  const meanVpd = val("clim_vpd");
-  const co2ppm = val("clim_co2");
-
-  const temp = new Float64Array(nhours);
-  const rg   = new Float64Array(nhours);
-  const prec = new Float64Array(nhours);
-  const vpd  = new Float64Array(nhours);
-  const pres = new Float64Array(nhours);
-  const co2  = new Float64Array(nhours);
-  const wind = new Float64Array(nhours);
-  const lai  = new Float64Array(ndays);
-  const snow = new Float64Array(ndays);
-  const sm   = new Float64Array(ndays);
-
-  for (let h = 0; h < nhours; h++) {
-    const doy = Math.floor(h / 24);
-    const hod = h % 24;
-    // seasonal temperature with diurnal cycle
-    const tSeason = meanT + ampT * Math.sin(2 * Math.PI * (doy - 80) / 365);
-    const tDiurnal = 4 * Math.sin(2 * Math.PI * (hod - 6) / 24);
-    temp[h] = tSeason + tDiurnal + 273.15;  // K
-
-    // solar radiation with seasonal & diurnal pattern
-    const dayLen = 12 + 6 * Math.sin(2 * Math.PI * (doy - 80) / 365);
-    const sunrise = 12 - dayLen / 2;
-    const sunset  = 12 + dayLen / 2;
-    if (hod >= sunrise && hod <= sunset) {
-      const frac = (hod - sunrise) / (sunset - sunrise);
-      const rgSeason = meanRg * (0.5 + 0.5 * Math.sin(2 * Math.PI * (doy - 80) / 365));
-      rg[h] = Math.max(0, rgSeason * Math.sin(Math.PI * frac));
-    }
-
-    // precipitation: seasonal with some randomness
-    const precSeason = meanPrec * (0.8 + 0.4 * Math.cos(2 * Math.PI * (doy - 200) / 365));
-    prec[h] = precSeason / 24 / 3600;  // mm/d -> mm/s
-
-    // VPD: higher in summer, minimal at low temp
-    const tC = temp[h] - 273.15;
-    vpd[h] = Math.max(50, meanVpd * Math.max(0, tC / 20) *
-             (0.6 + 0.4 * Math.sin(2 * Math.PI * (hod - 6) / 24)));
-
-    pres[h] = 101325;
-    co2[h]  = co2ppm * 1e-6;  // ppm -> fraction
-    wind[h] = 2.5 + 1.5 * Math.sin(2 * Math.PI * hod / 24 + 1);
+async function loadReferenceData() {
+  const response = await fetch(new URL("./qvidja-v1-reference.json", window.location.href));
+  if (!response.ok) {
+    throw new Error(`Failed to load Qvidja reference data (${response.status})`);
   }
+  return await response.json();
+}
 
-  // daily LAI: seasonal deciduous pattern
-  for (let d = 0; d < ndays; d++) {
-    const tDay = meanT + ampT * Math.sin(2 * Math.PI * (d - 80) / 365);
-    // simple phenology: LAI follows temperature
-    lai[d] = Math.max(0.1, 3.0 * Math.max(0, Math.min(1, (tDay - 2) / 18)));
-    snow[d] = tDay < -2 ? Math.max(0, 0.15 * (-tDay - 2)) : 0;
-    sm[d] = 0.35;  // constant observed soil moisture
-  }
+function applyReferenceDefaults(reference) {
+  const { defaults, site } = reference;
+  document.getElementById("ndays").max = String(site.ndays);
+  document.getElementById("ndays").value = String(site.ndays);
+  document.getElementById("pft_type_code").value = String(defaults.pft_type_code);
+  document.getElementById("obs_lai").value = defaults.obs_lai ? "1" : "0";
 
-  return { nhours, temp, rg, prec, vpd, pres, co2, wind, lai, snow, sm };
+  document.getElementById("conductivity").value = String(defaults.conductivity);
+  document.getElementById("psi50").value = String(defaults.psi50);
+  document.getElementById("b_param").value = String(defaults.b);
+  document.getElementById("alpha").value = String(defaults.alpha);
+  document.getElementById("gamma").value = String(defaults.gamma);
+  document.getElementById("rdark").value = String(defaults.rdark);
+
+  document.getElementById("soil_depth").value = String(defaults.soil_depth);
+  document.getElementById("max_poros").value = String(defaults.max_poros);
+  document.getElementById("fc").value = String(defaults.fc);
+  document.getElementById("wp").value = String(defaults.wp);
+  document.getElementById("ksat").value = String(defaults.ksat);
+
+  document.getElementById("cratio_resp").value = String(defaults.cratio_resp);
+  document.getElementById("cratio_leaf").value = String(defaults.cratio_leaf);
+  document.getElementById("cratio_root").value = String(defaults.cratio_root);
+  document.getElementById("cratio_biomass").value = String(defaults.cratio_biomass);
+  document.getElementById("harvest_index").value = String(defaults.harvest_index);
+  document.getElementById("turnover_cleaf").value = String(defaults.turnover_cleaf);
+  document.getElementById("turnover_croot").value = String(defaults.turnover_croot);
+  document.getElementById("sla").value = String(defaults.sla);
+  document.getElementById("q10").value = String(defaults.q10);
+
+  document.getElementById("yasso_totc").value = String(defaults.yasso_totc);
+  document.getElementById("yasso_cn_input").value = String(defaults.yasso_cn_input);
+  document.getElementById("yasso_fract_root").value = String(defaults.yasso_fract_root);
+  document.getElementById("yasso_fract_legacy").value = String(defaults.yasso_fract_legacy);
+
+  referencePeriod.textContent = `Reference replay window: ${site.start_date} to ${site.end_date_exclusive} (${site.ndays} days, ${site.nhours} hourly steps)`;
+  referenceSource.textContent = `Source: vendored Qvidja NetCDF inputs under vendor/SVMC/data/input, matching the maintained SVMC v1.0.0 test configuration.`;
+}
+
+function sliceReferenceData(reference, ndays) {
+  const cappedDays = Math.max(1, Math.min(ndays, reference.site.ndays));
+  const nhours = cappedDays * 24;
+  return {
+    nhours,
+    ndays: cappedDays,
+    hourly: {
+      temp_hr: reference.hourly.temp_hr.slice(0, nhours),
+      rg_hr: reference.hourly.rg_hr.slice(0, nhours),
+      prec_hr: reference.hourly.prec_hr.slice(0, nhours),
+      vpd_hr: reference.hourly.vpd_hr.slice(0, nhours),
+      pres_hr: reference.hourly.pres_hr.slice(0, nhours),
+      co2_hr: reference.hourly.co2_hr.slice(0, nhours),
+      wind_hr: reference.hourly.wind_hr.slice(0, nhours),
+      timestamps: reference.hourly.timestamps.slice(0, nhours),
+    },
+    daily: {
+      dates: reference.daily.dates.slice(0, cappedDays),
+      lai_day: reference.daily.lai_day.slice(0, cappedDays),
+      snowdepth_day: reference.daily.snowdepth_day.slice(0, cappedDays),
+      soilmoist_day: reference.daily.soilmoist_day.slice(0, cappedDays),
+      manage_type: reference.daily.manage_type.slice(0, cappedDays),
+      manage_c_in: reference.daily.manage_c_in.slice(0, cappedDays),
+      manage_c_out: reference.daily.manage_c_out.slice(0, cappedDays),
+    },
+    defaults: reference.defaults,
+  };
 }
 
 // ---- chart management ----
@@ -319,32 +352,36 @@ runBtn.addEventListener("click", async () => {
   runBtn.disabled = true;
   status.className = "loading";
 
-  const ndays = val("ndays");
-  status.textContent = `Generating ${ndays}-day forcing…`;
+  const requestedDays = val("ndays");
+  status.textContent = `Loading ${requestedDays}-day slice of the Qvidja reference inputs…`;
 
   try {
-    const f = generateForcing(ndays);
+    const f = sliceReferenceData(referenceData, requestedDays);
+    document.getElementById("ndays").value = String(f.ndays);
 
-    status.textContent = "Binding forcing data to R…";
+    status.textContent = "Binding reference inputs to R…";
 
     // Bind arrays to R global env (avoids huge inline R expressions)
     const env = webR.objs.globalEnv;
-    await env.bind(".__temp_hr", await new webR.RDouble(Array.from(f.temp)));
-    await env.bind(".__rg_hr", await new webR.RDouble(Array.from(f.rg)));
-    await env.bind(".__prec_hr", await new webR.RDouble(Array.from(f.prec)));
-    await env.bind(".__vpd_hr", await new webR.RDouble(Array.from(f.vpd)));
-    await env.bind(".__pres_hr", await new webR.RDouble(Array.from(f.pres)));
-    await env.bind(".__co2_hr", await new webR.RDouble(Array.from(f.co2)));
-    await env.bind(".__wind_hr", await new webR.RDouble(Array.from(f.wind)));
-    await env.bind(".__lai_day", await new webR.RDouble(Array.from(f.lai)));
-    await env.bind(".__snow_day", await new webR.RDouble(Array.from(f.snow)));
-    await env.bind(".__sm_day", await new webR.RDouble(Array.from(f.sm)));
+    await env.bind(".__temp_hr", await new webR.RDouble(Array.from(f.hourly.temp_hr)));
+    await env.bind(".__rg_hr", await new webR.RDouble(Array.from(f.hourly.rg_hr)));
+    await env.bind(".__prec_hr", await new webR.RDouble(Array.from(f.hourly.prec_hr)));
+    await env.bind(".__vpd_hr", await new webR.RDouble(Array.from(f.hourly.vpd_hr)));
+    await env.bind(".__pres_hr", await new webR.RDouble(Array.from(f.hourly.pres_hr)));
+    await env.bind(".__co2_hr", await new webR.RDouble(Array.from(f.hourly.co2_hr)));
+    await env.bind(".__wind_hr", await new webR.RDouble(Array.from(f.hourly.wind_hr)));
+    await env.bind(".__lai_day", await new webR.RDouble(Array.from(f.daily.lai_day)));
+    await env.bind(".__snow_day", await new webR.RDouble(Array.from(f.daily.snowdepth_day)));
+    await env.bind(".__sm_day", await new webR.RDouble(Array.from(f.daily.soilmoist_day)));
+    await env.bind(".__manage_type", await new webR.RDouble(Array.from(f.daily.manage_type)));
+    await env.bind(".__manage_c_in", await new webR.RDouble(Array.from(f.daily.manage_c_in)));
+    await env.bind(".__manage_c_out", await new webR.RDouble(Array.from(f.daily.manage_c_out)));
 
-    status.textContent = "Running SVMC (Fortran)…";
+    status.textContent = "Running SVMC (Fortran) to generate model outputs…";
 
     const rCode = `
       result <- svmc_run(
-        nhours = ${f.nhours}L, ndays = ${ndays}L,
+        nhours = ${f.nhours}L, ndays = ${f.ndays}L,
         temp_hr = .__temp_hr,
         rg_hr = .__rg_hr,
         prec_hr = .__prec_hr,
@@ -356,7 +393,8 @@ runBtn.addEventListener("click", async () => {
         snowdepth_day = .__snow_day,
         soilmoist_day = .__sm_day,
         obs_lai = ${val("obs_lai") ? "TRUE" : "FALSE"},
-        obs_soilmoist = TRUE,
+        obs_soilmoist = FALSE,
+        obs_snowdepth = FALSE,
         conductivity = ${val("conductivity")},
         psi50 = ${val("psi50")},
         b = ${val("b_param")},
@@ -364,6 +402,7 @@ runBtn.addEventListener("click", async () => {
         gamma = ${val("gamma")},
         rdark = ${val("rdark")},
         pft_type_code = ${val("pft_type_code")}L,
+        opt_hypothesis = "${f.defaults.opt_hypothesis}",
         soil_depth = ${val("soil_depth")},
         max_poros = ${val("max_poros")},
         fc = ${val("fc")},
@@ -381,10 +420,14 @@ runBtn.addEventListener("click", async () => {
         yasso_totc = ${val("yasso_totc")},
         yasso_cn_input = ${val("yasso_cn_input")},
         yasso_fract_root = ${val("yasso_fract_root")},
-        yasso_fract_legacy = ${val("yasso_fract_legacy")}
+        yasso_fract_legacy = ${val("yasso_fract_legacy")},
+        manage_type = .__manage_type,
+        manage_c_in = .__manage_c_in,
+        manage_c_out = .__manage_c_out
       )
       rm(.__temp_hr, .__rg_hr, .__prec_hr, .__vpd_hr, .__pres_hr,
-         .__co2_hr, .__wind_hr, .__lai_day, .__snow_day, .__sm_day)
+         .__co2_hr, .__wind_hr, .__lai_day, .__snow_day, .__sm_day,
+         .__manage_type, .__manage_c_in, .__manage_c_out)
       result
     `;
 
@@ -412,12 +455,12 @@ runBtn.addEventListener("click", async () => {
       ]);
 
     // ---- Summary stats ----
-    // GPP/NEE: model outputs are in kg C m-2 s-1, sum daily means * 86400 * 1000 for g/m2/yr
-    const totalGPP = gpp_day.reduce((s, v) => s + v, 0) * 86400 * 1000;
-    const totalNEE = nee_day.reduce((s, v) => s + v, 0) * 86400 * 1000;
+    const years = f.ndays / 365.25;
+    const totalGPP = gpp_day.reduce((s, v) => s + v, 0) * 86400 * 1000 / years;
+    const totalNEE = nee_day.reduce((s, v) => s + v, 0) * 86400 * 1000 / years;
     const finalSOC = soil_c[soil_c.length - 1];
-    const peakLAI  = Math.max(...f.lai);
-    const totalET  = tr_hr.reduce((s, v) => s + v, 0) * 3600 * 1000; // m/s -> mm total
+    const peakLAI  = val("obs_lai") ? Math.max(...f.daily.lai_day) : Math.max(...lai_alloc);
+    const totalET  = tr_hr.reduce((s, v) => s + v, 0) * 3600 / years; // mm/s -> mm/yr
     const peakCleaf = Math.max(...cleaf) * 1000; // kg -> g
 
     document.getElementById("summary").style.display = "";
@@ -432,15 +475,15 @@ runBtn.addEventListener("click", async () => {
     // ---- Charts ----
     document.getElementById("charts").style.display = "";
     document.getElementById("placeholder").style.display = "none";
-    const dayLabels = Array.from({ length: ndays }, (_, i) => i + 1);
+    const dayLabels = f.daily.dates;
     // For hourly charts, subsample to daily resolution for readability
     const hourStep = Math.max(1, Math.floor(f.nhours / 2000));
     const hrLabels = [];
     const gppSub = [], trSub = [], smSub = [], sweSub = [], gsSub = [];
     for (let i = 0; i < f.nhours; i += hourStep) {
-      hrLabels.push((i / 24).toFixed(1));
+      hrLabels.push(f.hourly.timestamps[i].slice(0, 10));
       gppSub.push(gpp_hr[i] * 1e6 * 1000);  // kg C m-2 s-1 -> µmol m-2 s-1 (approx)
-      trSub.push(tr_hr[i] * 1000 * 3600);    // m/s -> mm/hr
+      trSub.push(tr_hr[i] * 3600);            // mm/s -> mm/hr
       smSub.push(soilmoist_hr[i]);
       sweSub.push(swe_hr[i] * 1000);          // m -> mm
       gsSub.push(gs_hr[i]);
@@ -511,7 +554,7 @@ runBtn.addEventListener("click", async () => {
     });
 
     status.className = "ok";
-    status.textContent = `Done — ${ndays} days (${f.nhours} hourly steps) simulated.`;
+    status.textContent = `Done — simulated ${f.ndays} reference-input days (${f.daily.dates[0]} to ${f.daily.dates[f.daily.dates.length - 1]}).`;
   } catch (e) {
     status.className = "err";
     status.textContent = "Error: " + e.message;
