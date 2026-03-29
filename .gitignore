@@ -15,6 +15,10 @@ reference-data/generated/
 # IDE
 .vscode/settings.json
 
+# Papers / preprints (downloaded for reference, not tracked)
+egusphere-*.pdf
+egusphere-*.txt
+
 # OS
 .DS_Store
 

@@ -18,6 +18,8 @@
 #' @param alpha,gamma Cost parameters for P-hydro.
 #' @param rdark Dark respiration parameter.
 #' @param pft_type_code Integer PFT: 1=grass, 2=oat, 0=other.
+#' @param opt_hypothesis Optimization hypothesis for P-Hydro: \code{"PM"}
+#'   (profit maximization) or \code{"LC"} (least cost).
 #'
 #' @param soil_depth,max_poros,fc,wp,ksat Soil physical parameters.
 #' @param maxpond,n_van,watres,alpha_van,watsat Soil retention parameters.
@@ -75,6 +77,7 @@ svmc_run <- function(
     conductivity = 3e-17, psi50 = -4, b = 2,
     alpha = 0.08, gamma = 1, rdark = 0,
     pft_type_code = 1L,
+    opt_hypothesis = "PM",
     # Soil hydro
     soil_depth = 0.6, max_poros = 0.54, fc = 0.40, wp = 0.12, ksat = 2e-6,
     maxpond = 0, n_van = 1.14, watres = 0, alpha_van = 5.92, watsat = 0.68,
@@ -99,9 +102,20 @@ svmc_run <- function(
 
   nhours <- as.integer(nhours)
   ndays  <- as.integer(ndays)
+  pft_type_code <- as.integer(pft_type_code)
+  invert_option <- as.integer(invert_option)
+  opt_hypothesis <- toupper(as.character(opt_hypothesis[[1]]))
 
   if (nhours != ndays * 24L) {
     stop("nhours must equal ndays * 24 for the hourly-to-daily integration loop")
+  }
+
+  if (!isTRUE(pft_type_code %in% c(0L, 1L, 2L))) {
+    stop("pft_type_code must be one of 0 (other), 1 (grass), or 2 (oat)")
+  }
+
+  if (!isTRUE(opt_hypothesis %in% c("PM", "LC"))) {
+    stop("opt_hypothesis must be either 'PM' or 'LC'")
   }
 
   if (length(temp_hr) != nhours || length(rg_hr) != nhours ||
@@ -161,10 +175,13 @@ svmc_run <- function(
   }
 
   # Pack scalar parameters into arrays for .Fortran (MAX_ARGS=65 limit)
-  # iparams(7): nhours, ndays, obs_lai, obs_soilmoist, obs_snowdepth, pft_type_code, invert_option
+  # iparams(8): nhours, ndays, obs_lai, obs_soilmoist, obs_snowdepth,
+  #   pft_type_code, invert_option, opt_hypothesis_code
   iparams <- as.integer(c(nhours, ndays,
                            as.integer(obs_lai), as.integer(obs_soilmoist),
-                           as.integer(obs_snowdepth), pft_type_code, invert_option))
+                           as.integer(obs_snowdepth), pft_type_code,
+                           invert_option,
+                           if (opt_hypothesis == "PM") 1L else 2L))
   # rparams(48): see svmc_wrapper.f90 for order
   rparams <- as.double(c(
     time_step, lat, lon,
@@ -223,7 +240,19 @@ svmc_run <- function(
     cstem        = double(ndays),
     soil_c       = double(ndays),
     above_bio    = double(ndays),
-    below_bio    = double(ndays))
+    below_bio    = double(ndays),
+    status       = integer(1),
+    PACKAGE = "SVMCwebr")
+
+  if (res$status[[1]] != 0L) {
+    stop(switch(as.character(res$status[[1]]),
+      `1` = "YASSO initialization rejected yasso_fract_root outside [0, 1]",
+      `2` = "YASSO initialization rejected yasso_fract_legacy outside [0, 1]",
+      `3` = "YASSO meteorological smoothing entered an invalid internal state",
+      `4` = "Unsupported opt_hypothesis code reached the Fortran wrapper",
+      sprintf("SVMC Fortran wrapper failed with status %d", res$status[[1]])
+    ))
+  }
 
   # Return named list of outputs
   list(

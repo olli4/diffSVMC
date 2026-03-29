@@ -122,7 +122,7 @@ subroutine readsoilyasso_namelist(yasso_para)
 
   end subroutine wrapper_yasso_initialize
 
-  subroutine wrapper_yasso_initialize_totc(soilcn_state, yasso_para)
+  subroutine wrapper_yasso_initialize_totc(soilcn_state, yasso_para, status)
     ! Another, simpler initialization method which enforces the total C and N stocks
     ! strictly and requires setting the fraction of "legacy" carbon explicitly. Given a
     ! total C, the C pools are set as a weighted combination of an equilibrated
@@ -131,6 +131,7 @@ subroutine readsoilyasso_namelist(yasso_para)
     ! with the equilibrium N depending on the given C:N ratio of input.
     type(soilcn_state_type), intent(inout)    :: soilcn_state
     type(yasso_para_type), intent(inout)    :: yasso_para
+    integer, intent(out) :: status
 
    !call get_params(param_y20_map, yasso_para%alpha_awen, &
    !                   yasso_para%beta12, yasso_para%decomp_pc, yasso_para%param_y20_map)
@@ -144,7 +145,8 @@ subroutine readsoilyasso_namelist(yasso_para)
                         yasso_para%precip_day,     &
                         yasso_para%tempr_ampl,     &
                         soilcn_state%cstate,       &
-                        soilcn_state%nstate) 
+                        soilcn_state%nstate,       &
+                        status) 
 
    end subroutine wrapper_yasso_initialize_totc
 
@@ -207,20 +209,23 @@ subroutine readsoilyasso_namelist(yasso_para)
   end subroutine wrapper_yasso_annual
 
 
-  subroutine exponential_smooth_met(met_daily, met_rolling, met_ind)
+  subroutine exponential_smooth_met(met_daily, met_rolling, met_ind, status)
     ! Evaluate an expotential smoothing. used for scaling met
     ! parameters from daily to monthly level.
     ! https://en.wikipedia.org/wiki/Exponential_smoothing
     real, intent(in) :: met_daily(:)         ! current meteorological data
     real, intent(inout) :: met_rolling(:)    ! previous-step meteorological data
     integer, intent(inout) :: met_ind     ! a counter, must be 1 on first call, not changed outside
+     integer, intent(out) :: status
     ! local variables
     real           :: alpha_smooth1=0.01, alpha_smooth2=0.0016
+
+     status = 0
 
     ! PORT-BRANCH: yasso.exponential_smooth_met.invalid_ind_guard
     ! Condition: met_ind < 1 -> fatal error (invalid counter state)
     if (met_ind < 1 ) then
-       ! print suppressed for WASM compat
+       status = 3
        return
     end if
     

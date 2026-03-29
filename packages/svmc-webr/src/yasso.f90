@@ -186,7 +186,7 @@ contains
   end subroutine eval_steadystate_nitr
   
   subroutine initialize_totc(param, totc, cn_input, fract_root_input, fract_legacy_soc, &
-       tempr_c, precip_day, tempr_ampl, cstate, nstate)
+     tempr_c, precip_day, tempr_ampl, cstate, nstate, status)
     ! Another, simpler initialization method which enforces the total C and N stocks
     ! strictly and requires setting the fraction of "legacy" carbon explicitly. Given a
     ! total C, the C pools are set as a weighted combination of an equilibrated
@@ -203,6 +203,7 @@ contains
     real, intent(in) :: precip_day ! mm
     real, intent(out) :: cstate(statesize_yasso)
     real, intent(out) :: nstate ! nitrogen
+   integer, intent(out) :: status
 
     real, parameter :: legacy_state(statesize_yasso) = (/0.0, 0.0, 0.0, 0.0, 1.0/)
     real :: matrix(statesize_yasso, statesize_yasso)
@@ -211,18 +212,20 @@ contains
     real :: eqstate(statesize_yasso)
     real :: eqfac
     real :: eqnitr
+
+   status = 0
     
     call evaluate_matrix_mean_tempr(param, tempr_c, precip_day * days_yr,tempr_ampl, matrix)
     ! PORT-BRANCH: yasso.initialize_totc.fract_root_input_guard
     ! Condition: fract_root_input < 0 or > 1 -> error stop (fatal).
     if (fract_root_input < 0.0 .or. fract_root_input > 1) then
-       ! print suppressed for WASM compat
+       status = 1
        return
     end if
     ! PORT-BRANCH: yasso.initialize_totc.fract_legacy_soc_guard
     ! Condition: fract_legacy_soc < 0 or > 1 -> error stop (fatal).
     if (fract_legacy_soc < 0.0 .or. fract_legacy_soc > 1) then
-       ! print suppressed for WASM compat
+       status = 2
        return
     end if
     

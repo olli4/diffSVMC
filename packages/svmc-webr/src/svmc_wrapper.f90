@@ -24,7 +24,8 @@ subroutine r_svmc_run( &
     gpp_day_out, nee_day_out, npp_day_out, &
     hetero_resp_out, auto_resp_out, &
     lai_day_out, cleaf_out, croot_out, cstem_out, &
-    soil_c_out, above_bio_out, below_bio_out)
+    soil_c_out, above_bio_out, below_bio_out, &
+    status)
 
   use readctrl_mod
   use readvegpara_mod
@@ -38,7 +39,8 @@ subroutine r_svmc_run( &
   implicit none
 
   ! --- Packed parameter arrays ---
-  ! iparams(7): nhours, ndays, obs_lai, obs_soilmoist, obs_snowdepth, pft_type_code, invert_option
+  ! iparams(8): nhours, ndays, obs_lai, obs_soilmoist, obs_snowdepth,
+  !   pft_type_code, invert_option, opt_hypothesis_code
   ! rparams(48): time_step, lat, lon, conductivity, psi50, b, alpha, gamma, rdark,
   !   soil_depth, max_poros, fc, wp, ksat, maxpond, n_van, watres, alpha_van, watsat,
   !   wmax, wmaxsnow, hc, w_leaf, rw, rwmin, gsoil, kmelt, kfreeze, frac_snowliq,
@@ -46,13 +48,13 @@ subroutine r_svmc_run( &
   !   harvest_index, turnover_cleaf, turnover_croot, sla, q10,
   !   yasso_totc, yasso_cn_input, yasso_fract_root, yasso_fract_legacy,
   !   yasso_init_temp, yasso_init_temp_ampl, yasso_init_precip
-  integer, intent(in)          :: iparams(7)
+  integer, intent(in)          :: iparams(8)
   double precision, intent(in) :: rparams(48)
 
   ! --- Unpack dimensions ---
   integer :: nhours, ndays
   integer :: obs_lai_in, obs_soilmoist_in, obs_snowdepth_in
-  integer :: pft_type_code, invert_option_in
+  integer :: pft_type_code, invert_option_in, opt_hypothesis_code
   double precision :: time_step_in, lat_in, lon_in
   double precision :: conductivity_in, psi50_in, b_in, alpha_in, gamma_in, rdark_in
   double precision :: soil_depth_in, max_poros_in, fc_in, wp_in, ksat_in
@@ -111,6 +113,7 @@ subroutine r_svmc_run( &
   double precision, intent(inout) :: soil_c_out(*)
   double precision, intent(inout) :: above_bio_out(*)
   double precision, intent(inout) :: below_bio_out(*)
+  integer, intent(out)            :: status
 
   ! --- Local variables ---
   ! P-hydro outputs
@@ -155,6 +158,8 @@ subroutine r_svmc_run( &
   integer :: pheno_stage
   integer :: hr, day_idx, hour_in_day
 
+  status = 0
+
   ! ===== Unpack parameter arrays =====
   nhours           = iparams(1)
   ndays            = iparams(2)
@@ -163,6 +168,7 @@ subroutine r_svmc_run( &
   obs_snowdepth_in = iparams(5)
   pft_type_code    = iparams(6)
   invert_option_in = iparams(7)
+  opt_hypothesis_code = iparams(8)
 
   time_step_in      = rparams(1)
   lat_in            = rparams(2)
@@ -238,15 +244,26 @@ subroutine r_svmc_run( &
   gamma = gamma_in
   rdark = rdark_in
   num_pft = 1
-  opt_hypothesis = 'PM'
+
+  select case (opt_hypothesis_code)
+    case (1)
+      opt_hypothesis = 'PM'
+    case (2)
+      opt_hypothesis = 'LC'
+    case default
+      status = 4
+      return
+  end select
 
   select case (pft_type_code)
+    case (0)
+      pft_type = "other"
     case (1)
       pft_type = "grass"
     case (2)
       pft_type = "oat"
     case default
-      pft_type = "grass"
+      pft_type = "other"
   end select
 
   ! ===== Set spafhy_para from R arguments =====
@@ -297,7 +314,10 @@ subroutine r_svmc_run( &
   yasso_para%tempr_ampl = real(yasso_init_temp_ampl_in)
   yasso_para%precip_day = real(yasso_init_precip_in)
 
-  call wrapper_yasso_initialize_totc(soilcn_state, yasso_para)
+  call wrapper_yasso_initialize_totc(soilcn_state, yasso_para, status)
+  if (status /= 0) then
+    return
+  end if
 
   ! ===== Initialize water state =====
   call initialization_spafhy(canopywater_state, soilwater_state, spafhy_para)
@@ -443,7 +463,10 @@ subroutine r_svmc_run( &
     end if
     metyasso(2) = real(prec_val + canopywater_flux%Melt / (time_step * 3600.0d0))
 
-    call exponential_smooth_met(metyasso, metyasso_roll, metyasso_ind)
+    call exponential_smooth_met(metyasso, metyasso_roll, metyasso_ind, status)
+    if (status /= 0) then
+      return
+    end if
     temp_day_acc = temp_day_acc + dble(metyasso_roll(1))
     precip_day_acc = precip_day_acc + dble(metyasso_roll(2)) * time_step * 3600.0d0
 
