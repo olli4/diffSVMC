@@ -48,8 +48,14 @@ implicit none
 
    public alloc_hypothesis_1    ! estimate litter input from gpp directly, fixed ratio
    public alloc_hypothesis_2    ! estimate litter input from npp -> above- & below- ground biomass, only management
+   public readalloc_namelist    ! no-op stub (parameters set by wrapper)
 
 contains
+
+   subroutine readalloc_namelist(alloc_para)
+     type(alloc_para_type), intent(inout) :: alloc_para
+     ! No-op stub — parameters set directly by the R wrapper
+   end subroutine readalloc_namelist
 
    subroutine alloc_hypothesis_1(gpp_day, npp_day, litter_cleaf, litter_croot, alloc_para)
       real(8), intent(in)    :: gpp_day      ! gpp (daily average),  kg C m-2 s-1

@@ -1,6 +1,17 @@
-# Force all objects to be built before linking.
-# R's default build auto-detects source files but fails with Fortran module
-# dependencies. We override the all target to build in dependency order.
+# Full SVMC build for R package.
+# Build order respects Fortran module dependencies.
+# -freal-4-real-8 matches the vendor build flag, promoting all REAL(4)
+# to REAL(8) without affecting DOUBLE PRECISION.
+# PKG_FFLAGS applies to .f files, PKG_FCFLAGS applies to .f90 files.
 .PHONY: all
 
-OBJECTS = readvegpara_stub.o allocation.o allocation_wrappers.o init.o
+PKG_FFLAGS  = -freal-4-real-8
+PKG_FCFLAGS = -freal-4-real-8
+
+OBJECTS = readctrl_stub.o readvegpara_stub.o readsoilpara_stub.o \
+          blas.o linpack.o lbfgsb.o timer.o \
+          juldate.o \
+          yassofortran20.o yasso.o wrapper_yasso.o \
+          phydro_mod.o water_mod.o \
+          allocation.o allocation_wrappers.o \
+          svmc_wrapper.o init.o

@@ -1,17 +1,18 @@
 Package: SVMCwebr
-Title: SVMC Allocation Model for WebR
-Version: 0.1.0
+Title: Full SVMC Model for WebR
+Version: 0.2.0
 Authors@R: c(
     person("HAMK", role = c("aut", "cre"), email = "olli.niemitalo@hamk.fi"),
     person("Hui", "Tang", role = "aut",
            comment = "Original SVMC Fortran code (huitang-earth/SVMC)")
     )
-Description: WebR-compatible R wrapper for the SVMC (Simple Vegetation Model of
-    Carbon) allocation submodel. Provides R-callable interfaces to the Fortran
-    allocation subroutines (alloc_hypothesis_2, invert_alloc) for browser-based
-    comparison with the jax-js-nonconsuming TypeScript port. The Fortran source
-    derives from vendor/SVMC with minimal modifications for R compatibility
-    (see src/allocation.f90 header).
+Description: WebR-compatible R wrapper for the full SVMC (Simple Vegetation
+    Model of Carbon). Provides the complete integration loop: P-hydro
+    photosynthesis-hydraulics optimization (with L-BFGS-B), SpaFHy canopy and
+    soil water balance, YASSO20 soil carbon decomposition, and carbon allocation.
+    All file I/O (NetCDF, namelists) is replaced by R-level data passing.
+    The Fortran source derives from vendor/SVMC with minimal modifications for
+    R compatibility (see src/ headers for provenance).
 License: GPL (>= 3)
 Encoding: UTF-8
 NeedsCompilation: yes

@@ -154,7 +154,7 @@ footer a { color: var(--accent); }
 </footer>
 
 <!-- WebR + Chart.js --------------------------------------------------- -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 <script type="module">
 import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
 
@@ -167,15 +167,11 @@ status.textContent = "Loading WebR runtime…";
 const webR = new WebR();
 await webR.init();
 
-status.textContent = "Installing SVMCwebr from GitHub Pages…";
-await webR.evalRVoid(`
-  options(repos = c(
-    svmc = "${repoUrl()}",
-    webr = "https://repo.r-wasm.org/"
-  ))
-  install.packages("SVMCwebr")
-  library(SVMCwebr)
-`);
+status.textContent = "Installing SVMCwebr…";
+await webR.installPackages(["SVMCwebr"], {
+  repos: [repoUrl(), "https://repo.r-wasm.org/"],
+});
+await webR.evalRVoid("library(SVMCwebr)");
 
 status.className = "ok";
 status.textContent = "Ready — SVMCwebr loaded.";

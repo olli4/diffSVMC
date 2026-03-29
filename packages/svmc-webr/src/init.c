@@ -26,9 +26,27 @@ extern void F77_NAME(r_invert_alloc)(
     double *, double *,
     int *, int *);
 
+extern void F77_NAME(r_svmc_run)(
+    /* iparams(7), rparams(45) */
+    int *, double *,
+    /* hourly climate forcing: 7 arrays */
+    double *, double *, double *, double *, double *, double *, double *,
+    /* daily obs: 3 double arrays + 1 int array + 2 double arrays */
+    double *, double *, double *, int *, double *, double *,
+    /* hourly outputs: 11 arrays */
+    double *, double *, double *, double *,
+    double *, double *, double *, double *,
+    double *, double *, double *,
+    /* daily outputs: 12 arrays */
+    double *, double *, double *,
+    double *, double *,
+    double *, double *, double *, double *,
+    double *, double *, double *);
+
 static const R_FortranMethodDef FortranEntries[] = {
     {"r_alloc_h2",      (DL_FUNC) &F77_NAME(r_alloc_h2),      34},
     {"r_invert_alloc",  (DL_FUNC) &F77_NAME(r_invert_alloc),  24},
+    {"r_svmc_run",      (DL_FUNC) &F77_NAME(r_svmc_run),      38},
     {NULL, NULL, 0}
 };
 
