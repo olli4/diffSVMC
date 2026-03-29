@@ -421,12 +421,13 @@ runBtn.addEventListener("click", async () => {
     const peakCleaf = Math.max(...cleaf) * 1000; // kg -> g
 
     document.getElementById("summary").style.display = "";
-    document.getElementById("s-gpp").textContent = totalGPP.toFixed(1);
-    document.getElementById("s-nee").textContent = totalNEE.toFixed(1);
-    document.getElementById("s-soilc").textContent = finalSOC.toFixed(2);
-    document.getElementById("s-lai").textContent = peakLAI.toFixed(2);
-    document.getElementById("s-et").textContent = totalET.toFixed(1);
-    document.getElementById("s-cleaf").textContent = peakCleaf.toFixed(2);
+    const fmt = (v, d) => (v != null && isFinite(v)) ? v.toFixed(d) : "—";
+    document.getElementById("s-gpp").textContent = fmt(totalGPP, 1);
+    document.getElementById("s-nee").textContent = fmt(totalNEE, 1);
+    document.getElementById("s-soilc").textContent = fmt(finalSOC, 2);
+    document.getElementById("s-lai").textContent = fmt(peakLAI, 2);
+    document.getElementById("s-et").textContent = fmt(totalET, 1);
+    document.getElementById("s-cleaf").textContent = fmt(peakCleaf, 2);
 
     // ---- Charts ----
     document.getElementById("charts").style.display = "";

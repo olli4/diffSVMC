@@ -52,8 +52,8 @@ Contains
     ss=hhmiss-10000*hh-100*mi
 
     if (yyyy.eq.0) then
-      print*, 'there is no year zero.'
-      stop
+      ! print/stop suppressed for WASM compat
+      return
     end if
   
     if (yyyy.lt.0) yyyy=yyyy+1

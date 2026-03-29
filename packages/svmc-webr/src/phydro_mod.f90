@@ -195,7 +195,7 @@ contains
     !iwa=3*nmax
     
     task="START"
-    iprint=0   ! print a bit more than usual
+    iprint=-1  ! suppress all L-BFGS-B output (required for WASM)
     lsave= (/.True., .True., .True., .True./)     ! 
     isave(1:44)=0        !
     dsave(1:29)=0.0      !

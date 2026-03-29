@@ -255,7 +255,8 @@ SUBROUTINE mod5c20(theta,time,temp,prec,init,b,d,leac,xt,steadystate_pred)
         DO k = 1,n-1
             CALL pivot(U,c,k) ! do pivoting (though may not be necessary in our case)
             IF (ABS(U(k,k)) <= tol) THEN
-                write(*,*) 'Warning!!! Matrix is singular to working precision!'
+                ! write suppressed for WASM compat
+                continue
             END IF
             U(k+1:n,k) = U(k+1:n,k)/U(k,k)
             DO j = k+1,n
