@@ -287,12 +287,6 @@ function generateForcing(ndays) {
   return { nhours, temp, rg, prec, vpd, pres, co2, wind, lai, snow, sm };
 }
 
-/** Convert a JS Float64Array to an R vector string. */
-function toRVec(arr) {
-  // For large arrays, use c(...) with comma-separated values
-  return "c(" + Array.from(arr).join(",") + ")";
-}
-
 // ---- chart management ----
 const charts = {};
 function makeChart(canvasId, config) {
@@ -331,22 +325,36 @@ runBtn.addEventListener("click", async () => {
   try {
     const f = generateForcing(ndays);
 
+    status.textContent = "Binding forcing data to R…";
+
+    // Bind arrays to R global env (avoids huge inline R expressions)
+    const env = webR.objs.globalEnv;
+    await env.bind(".__temp_hr", await new webR.RDouble(Array.from(f.temp)));
+    await env.bind(".__rg_hr", await new webR.RDouble(Array.from(f.rg)));
+    await env.bind(".__prec_hr", await new webR.RDouble(Array.from(f.prec)));
+    await env.bind(".__vpd_hr", await new webR.RDouble(Array.from(f.vpd)));
+    await env.bind(".__pres_hr", await new webR.RDouble(Array.from(f.pres)));
+    await env.bind(".__co2_hr", await new webR.RDouble(Array.from(f.co2)));
+    await env.bind(".__wind_hr", await new webR.RDouble(Array.from(f.wind)));
+    await env.bind(".__lai_day", await new webR.RDouble(Array.from(f.lai)));
+    await env.bind(".__snow_day", await new webR.RDouble(Array.from(f.snow)));
+    await env.bind(".__sm_day", await new webR.RDouble(Array.from(f.sm)));
+
     status.textContent = "Running SVMC (Fortran)…";
 
-    // Build R call
     const rCode = `
       result <- svmc_run(
         nhours = ${f.nhours}L, ndays = ${ndays}L,
-        temp_hr = ${toRVec(f.temp)},
-        rg_hr = ${toRVec(f.rg)},
-        prec_hr = ${toRVec(f.prec)},
-        vpd_hr = ${toRVec(f.vpd)},
-        pres_hr = ${toRVec(f.pres)},
-        co2_hr = ${toRVec(f.co2)},
-        wind_hr = ${toRVec(f.wind)},
-        lai_day = ${toRVec(f.lai)},
-        snowdepth_day = ${toRVec(f.snow)},
-        soilmoist_day = ${toRVec(f.sm)},
+        temp_hr = .__temp_hr,
+        rg_hr = .__rg_hr,
+        prec_hr = .__prec_hr,
+        vpd_hr = .__vpd_hr,
+        pres_hr = .__pres_hr,
+        co2_hr = .__co2_hr,
+        wind_hr = .__wind_hr,
+        lai_day = .__lai_day,
+        snowdepth_day = .__snow_day,
+        soilmoist_day = .__sm_day,
         obs_lai = ${val("obs_lai") ? "TRUE" : "FALSE"},
         obs_soilmoist = TRUE,
         conductivity = ${val("conductivity")},
@@ -375,7 +383,8 @@ runBtn.addEventListener("click", async () => {
         yasso_fract_root = ${val("yasso_fract_root")},
         yasso_fract_legacy = ${val("yasso_fract_legacy")}
       )
-      # Return as flat named list of vectors
+      rm(.__temp_hr, .__rg_hr, .__prec_hr, .__vpd_hr, .__pres_hr,
+         .__co2_hr, .__wind_hr, .__lai_day, .__snow_day, .__sm_day)
       result
     `;
 
