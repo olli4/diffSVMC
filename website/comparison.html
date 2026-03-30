@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVMC — Fortran vs JAX Comparison</title>
+<style>
+:root {
+  --bg: #f8f9fa; --card: #fff; --border: #dee2e6;
+  --text: #212529; --muted: #6c757d; --accent: #0d6efd;
+  --fortran: #e63946; --jax: #457b9d; --error: #f4a261;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.5; padding: 1rem; max-width: 1400px; margin: 0 auto;
+}
+h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+.subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 1rem; }
+a { color: var(--accent); }
+.summary-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: .5rem; margin-bottom: 1.5rem;
+}
+.stat-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: .5rem; padding: .75rem;
+}
+.stat-card h3 { font-size: .8rem; color: var(--muted); margin-bottom: .25rem; }
+.stat-card .r2 { font-size: 1.3rem; font-weight: 700; }
+.stat-card .r2.perfect { color: #198754; }
+.stat-card .r2.good { color: #0d6efd; }
+.stat-card .detail { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-bottom: 1.5rem; }
+@media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+.chart-box {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: .5rem; padding: .75rem;
+}
+.chart-box h3 { font-size: .85rem; margin-bottom: .5rem; color: var(--muted); }
+canvas { width: 100% !important; height: 220px !important; }
+.legend-custom { display: flex; gap: 1.5rem; margin-bottom: .5rem; font-size: .8rem; }
+.legend-custom span::before {
+  content: ""; display: inline-block; width: 12px; height: 3px;
+  margin-right: 4px; vertical-align: middle;
+}
+.legend-custom .fort::before { background: var(--fortran); }
+.legend-custom .jax::before { background: var(--jax); }
+.legend-custom .err::before { background: var(--error); }
+.back { margin-bottom: 1rem; display: inline-block; font-size: .85rem; }
+#status { font-size: .85rem; color: var(--muted); margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+
+<a class="back" href="index.html">&larr; Back to Qvidja demo</a>
+
+<h1>Fortran vs JAX &mdash; 1697-Day Qvidja Comparison</h1>
+<p class="subtitle">
+  Automated comparison of the reference Fortran SVMC model and the JAX port
+  over the full Qvidja dataset (May 2018 &ndash; Dec 2022).
+</p>
+
+<div class="legend-custom">
+  <span class="fort">Fortran reference</span>
+  <span class="jax">JAX port</span>
+</div>
+
+<div id="status">Loading comparison data&hellip;</div>
+
+<div id="summary-container" class="summary-grid" style="display:none;"></div>
+
+<div id="charts-container" class="chart-grid" style="display:none;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+(async () => {
+  const statusEl = document.getElementById("status");
+  const summaryEl = document.getElementById("summary-container");
+  const chartsEl = document.getElementById("charts-container");
+
+  let data;
+  try {
+    const resp = await fetch("comparison-qvidja.json");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    data = await resp.json();
+  } catch (e) {
+    statusEl.textContent = `Failed to load comparison data: ${e.message}`;
+    return;
+  }
+
+  const { meta, fortran, jax, summary, lai } = data;
+  const ndays = meta.ndays;
+
+  const labels = Array.isArray(meta.dates) && meta.dates.length === ndays
+    ? meta.dates
+    : Array.from({ length: ndays }, (_, i) => `day-${i + 1}`);
+
+  statusEl.textContent = `${ndays} days compared (${labels[0]} to ${labels[labels.length - 1]})`;
+
+  // ── Summary cards ──
+  const displayNames = {
+    gpp_avg: "GPP", nee: "NEE", hetero_resp: "Rh",
+    auto_resp: "Ra", cleaf: "C leaf", croot: "C root",
+    cstem: "C stem", cgrain: "C grain", lai_alloc: "LAI (alloc)",
+    litter_cleaf: "Litter leaf", litter_croot: "Litter root",
+    soc_total: "SOC total", wliq: "Soil moisture", psi: "Soil ψ",
+  };
+
+  summaryEl.style.display = "";
+  for (const [key, stats] of Object.entries(summary)) {
+    const r2 = stats.r_squared;
+    const r2class = r2 >= 0.99999 ? "perfect" : "good";
+    const card = document.createElement("div");
+    card.className = "stat-card";
+    card.innerHTML = `
+      <h3>${displayNames[key] || key}</h3>
+      <div class="r2 ${r2class}">R² = ${r2.toFixed(8)}</div>
+      <div class="detail">
+        max |error| = ${stats.max_abs_error.toExponential(2)}<br>
+        mean |error| = ${stats.mean_abs_error.toExponential(2)}
+      </div>
+    `;
+    summaryEl.appendChild(card);
+  }
+
+  // ── Charts ──
+  chartsEl.style.display = "";
+
+  const chartDefs = [
+    { title: "Gross Primary Productivity (GPP)", key: "gpp_avg", unit: "T C ha⁻¹ hr⁻¹" },
+    { title: "Net Ecosystem Exchange (NEE)", key: "nee", unit: "T C ha⁻¹ hr⁻¹" },
+    { title: "Soil Organic Carbon (SOC)", key: "soc_total", unit: "kg C m⁻²" },
+    { title: "Soil Moisture (θ)", key: "wliq", unit: "m³ m⁻³" },
+    { title: "Leaf Carbon Pool", key: "cleaf", unit: "T C ha⁻¹" },
+    { title: "Root Carbon Pool", key: "croot", unit: "T C ha⁻¹" },
+    { title: "Heterotrophic Respiration", key: "hetero_resp", unit: "T C ha⁻¹ hr⁻¹" },
+    { title: "Soil Water Potential (ψ)", key: "psi", unit: "MPa" },
+  ];
+
+  // Decimate for rendering (plot every Nth point)
+  const maxPoints = 600;
+  const step = Math.max(1, Math.floor(ndays / maxPoints));
+  const decLabels = labels.filter((_, i) => i % step === 0);
+
+  for (const def of chartDefs) {
+    const box = document.createElement("div");
+    box.className = "chart-box";
+    box.innerHTML = `<h3>${def.title}</h3>`;
+    const canvas = document.createElement("canvas");
+    box.appendChild(canvas);
+    chartsEl.appendChild(box);
+
+    const fDec = fortran[def.key].filter((_, i) => i % step === 0);
+    const jDec = jax[def.key].filter((_, i) => i % step === 0);
+
+    new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: decLabels,
+        datasets: [
+          {
+            label: "Fortran",
+            data: fDec,
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue("--fortran"),
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.1,
+          },
+          {
+            label: "JAX",
+            data: jDec,
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue("--jax"),
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.1,
+            borderDash: [4, 2],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            ticks: { maxTicksToRotate: 0, maxRotation: 45, autoSkipPadding: 20, font: { size: 10 } },
+          },
+          y: { title: { display: true, text: def.unit, font: { size: 10 } } },
+        },
+        plugins: {
+          legend: { display: true, position: "top", labels: { font: { size: 10 }, boxWidth: 20 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toExponential(4)}` } },
+        },
+      },
+    });
+  }
+
+  // ── LAI context chart ──
+  const laiBox = document.createElement("div");
+  laiBox.className = "chart-box";
+  laiBox.innerHTML = "<h3>Observed LAI (forcing input)</h3>";
+  const laiCanvas = document.createElement("canvas");
+  laiBox.appendChild(laiCanvas);
+  chartsEl.appendChild(laiBox);
+  const laiDec = lai.filter((_, i) => i % step === 0);
+  new Chart(laiCanvas, {
+    type: "line",
+    data: {
+      labels: decLabels,
+      datasets: [{
+        label: "LAI",
+        data: laiDec,
+        borderColor: "#2d6a4f",
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: "rgba(45,106,79,0.1)",
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { maxRotation: 45, autoSkipPadding: 20, font: { size: 10 } } },
+        y: { title: { display: true, text: "m² m⁻²", font: { size: 10 } } },
+      },
+      plugins: { legend: { display: false } },
+    },
+  });
+
+  // ── ET chart (JAX only) ──
+  if (jax.et_total) {
+    const etBox = document.createElement("div");
+    etBox.className = "chart-box";
+    etBox.innerHTML = "<h3>Evapotranspiration (JAX only)</h3>";
+    const etCanvas = document.createElement("canvas");
+    etBox.appendChild(etCanvas);
+    chartsEl.appendChild(etBox);
+    const etDec = jax.et_total.filter((_, i) => i % step === 0);
+    new Chart(etCanvas, {
+      type: "line",
+      data: {
+        labels: decLabels,
+        datasets: [{
+          label: "ET total",
+          data: etDec,
+          borderColor: "#219ebc",
+          borderWidth: 1.5,
+          pointRadius: 0,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { maxRotation: 45, autoSkipPadding: 20, font: { size: 10 } } },
+          y: { title: { display: true, text: "mm day⁻¹", font: { size: 10 } } },
+        },
+        plugins: { legend: { display: false } },
+      },
+    });
+  }
+})();
+</script>
+</body>
+</html>
