@@ -393,8 +393,7 @@ runBtn.addEventListener("click", async () => {
     await env.bind(".__manage_c_out", await new webR.RDouble(Array.from(f.daily.manage_c_out)));
 
     status.textContent = "Running SVMC (Fortran) to generate model outputs…";
-
-    const rCode = `
+    const t0 = performance.now();    const rCode = `
       result <- svmc_run(
         nhours = ${f.nhours}L, ndays = ${f.ndays}L,
         temp_hr = .__temp_hr,
@@ -447,6 +446,7 @@ runBtn.addEventListener("click", async () => {
     `;
 
     const rObj = await webR.evalR(rCode);
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
 
     // Extract arrays from R list
     const getVec = async (name) => {
@@ -569,7 +569,7 @@ runBtn.addEventListener("click", async () => {
     });
 
     status.className = "ok";
-    status.textContent = `Done — simulated ${f.ndays} reference-input days (${f.daily.dates[0]} to ${f.daily.dates[f.daily.dates.length - 1]}).`;
+    status.textContent = `Done \u2014 simulated ${f.ndays} days (${f.daily.dates[0]} to ${f.daily.dates[f.daily.dates.length - 1]}) in ${elapsed}\u2009s.`;
   } catch (e) {
     status.className = "err";
     status.textContent = "Error: " + e.message;
