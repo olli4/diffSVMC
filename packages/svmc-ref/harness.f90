@@ -17,7 +17,8 @@ PROGRAM harness
                        calc_gs, calc_assim_light_limited, fn_profit, &
                        quadratic, pmodel_hydraulics_numerical
   use water_mod, only: soil_water_retention_curve, soil_hydraulic_conductivity, &
-                       canopy_water_flux, soil_water
+                       canopy_water_flux, soil_water, &
+                       initialization_spafhy, reset_spafhy_flux
   use yasso, only: inputs_to_fractions, statesize_yasso, decompose, &
                     nc_mb, cue_min, nc_h_max, param_y20_map, &
                     initialize_totc, awenh_fineroot, awenh_leaf
@@ -25,7 +26,8 @@ PROGRAM harness
   use readvegpara_mod, only: par_plant_type, par_cost_type, par_env_type, &
                              par_photosynth_type, optimizer_type, kphio, &
                              opt_hypothesis, pft_type, conductivity, psi50, &
-                             b, alpha, gamma
+                             b, alpha, gamma, rdark, c_molmass, h2o_molmass, &
+                             k_ext => k
   use readsoilpara_mod, only: spafhy_para_type, canopywater_state_type, &
                               canopywater_flux_type, soilwater_state_type, &
                               soilwater_flux_type
@@ -171,8 +173,50 @@ PROGRAM harness
   integer :: inv_pheno
   real(8) :: inv_sin(5), inv_sout(8)  ! state/alloc output snapshots
 
+  ! --- Integration variables (35-day Qvidja cold-start replay) ---
+  include 'integration_forcing_decl.inc'
+  ! Loop counters
+  integer :: int_hr, int_day_idx
+  ! Water state
+  type(canopywater_state_type)  :: int_cw_state
+  type(canopywater_flux_type)   :: int_cw_flux
+  type(soilwater_state_type)    :: int_sw_state
+  type(soilwater_flux_type)     :: int_sw_flux
+  type(spafhy_para_type)        :: int_sp
+  ! Allocation state
+  type(alloc_para_type)         :: int_ap
+  type(management_data_type)    :: int_md
+  real(8) :: int_cleaf, int_croot, int_cstem, int_cgrain
+  real(8) :: int_npp_day, int_auto_resp
+  real(8) :: int_leaf_litter_c, int_root_litter_c, int_compost, int_soluble
+  real(8) :: int_above, int_below, int_yield, int_grain_fill
+  real(8) :: int_lai_alloc, int_lai, int_lai_prev, int_delta_lai
+  integer :: int_pheno
+  ! Yasso soil carbon (raw arrays — wrapper_yasso not staged)
+  real(8) :: int_cstate(5), int_nstate
+  real(8) :: int_input_cfract(5), int_ctend(5), int_ntend
+  ! Met smoothing
+  real(8) :: int_met_daily(2), int_met_rolling(2)
+  integer :: int_met_ind
+  ! Hourly variables
+  real(8) :: int_temp, int_rg, int_prec, int_vpd, int_pres, int_co2, int_wind
+  real(8) :: int_fapar, int_psi_soil, int_rn
+  real(8) :: int_gpp_hr, int_tr_phydro, int_tr_spafhy, int_latflow
+  real(8) :: int_jmax, int_dpsi, int_gs, int_aj, int_ci, int_chi
+  real(8) :: int_vcmax_hr, int_profit, int_chi_jmax_lim
+  ! Daily accumulators
+  real(8) :: int_temp_acc, int_precip_acc, int_gpp_acc, int_vcmax_acc
+  integer :: int_num_gpp_day, int_num_vcmax_day
+  ! Daily outputs
+  real(8) :: int_temp_avg, int_gpp_avg, int_vcmax_avg
+  real(8) :: int_leaf_rdark_day
+  real(8) :: int_hetero_resp, int_total_resp, int_nee_day
+
   integer :: i, j, k, m
   integer :: nrec  ! record counter
+
+  ! --- Integration forcing DATA statements (must follow all declarations) ---
+  include 'integration_forcing_data.inc'
 
   ! --- Open JSONL output file on unit 10 ---
   open(unit=10, file='fixtures.jsonl', status='replace', action='write')
@@ -1736,6 +1780,261 @@ PROGRAM harness
   ! Restore pft_type
   pft_type = ah2_pft_saved
 
+  ! ================================================================
+  ! INTEGRATION SECTION: 35-day Qvidja cold-start reference replay
+  !
+  ! Runs the coupled hourly/daily SVMC loop from a cold start with
+  ! Qvidja default parameters and observed forcing extracted from
+  ! qvidja-v1-reference.json (first 35 days, capturing the first
+  ! harvest event at day 33).  Produces one fn="integration_daily"
+  ! JSONL record per simulated day.
+  ! ================================================================
+
+  ! --- Set module-level P-Hydro parameters to Qvidja defaults ---
+  conductivity = 3.0d-17
+  psi50 = -4.0d0
+  b = 2.0d0
+  alpha = 0.08d0
+  gamma = 1.0d0
+  rdark = 0.015d0
+  pft_type = "grass"
+  opt_hypothesis = "PM"
+  time_step = 1.0
+
+  ! --- SpaFHy parameters (Qvidja soilhydro_namelist) ---
+  int_sp%soil_depth   = 0.6d0
+  int_sp%max_poros    = 0.68d0
+  int_sp%fc           = 0.4d0
+  int_sp%wp           = 0.12d0
+  int_sp%ksat         = 2.0d-6
+  int_sp%maxpond      = 0.0d0
+  int_sp%n_van        = 1.14d0
+  int_sp%watres       = 0.0d0
+  int_sp%alpha_van    = 5.92d0
+  int_sp%watsat       = 0.68d0
+  int_sp%wmax         = 0.5d0
+  int_sp%wmaxsnow     = 4.5d0
+  int_sp%hc           = 0.6d0
+  int_sp%w_leaf       = 0.01d0
+  int_sp%rw           = 0.20d0
+  int_sp%rwmin        = 0.02d0
+  int_sp%gsoil        = 5.0d-3
+  int_sp%kmelt        = 2.8934d-5
+  int_sp%kfreeze      = 5.79d-6
+  int_sp%frac_snowliq = 0.05d0
+  int_sp%zmeas        = 2.0d0
+  int_sp%zground      = 0.1d0
+  int_sp%zo_ground    = 0.01d0
+
+  ! --- Allocation parameters (Qvidja defaults) ---
+  int_ap%cratio_resp    = 5.0d-8
+  int_ap%cratio_leaf    = 0.6d0
+  int_ap%cratio_root    = 0.4d0
+  int_ap%cratio_biomass = 0.42d0
+  int_ap%harvest_index  = 0.8d0
+  int_ap%turnover_cleaf = 0.03d0
+  int_ap%turnover_croot = 0.004d0
+  int_ap%sla            = 10.0d0
+  int_ap%q10            = 2.0d0
+  int_ap%invert_option  = 0
+
+  ! --- Initialize water states (90% saturation cold start) ---
+  call initialization_spafhy(int_cw_state, int_sw_state, int_sp)
+
+  ! --- Initialize Yasso soil carbon (soilyasso_namelist defaults) ---
+  awenh_fineroot = (/ 0.46d0, 0.32d0, 0.04d0, 0.18d0, 0.0d0 /)
+  awenh_leaf     = (/ 0.46d0, 0.32d0, 0.04d0, 0.18d0, 0.0d0 /)
+  call initialize_totc(param_y20_map, 16.0d0, 50.0d0, 0.6d0, 0.0d0, &
+                       5.4d0, 1.87d0, 20.0d0, int_cstate, int_nstate)
+
+  ! --- Initialize carbon pools (cold start: all zero) ---
+  int_cleaf         = 0.0d0
+  int_croot         = 0.0d0
+  int_cstem         = 0.0d0
+  int_cgrain        = 0.0d0
+  int_npp_day       = 0.0d0
+  int_auto_resp     = 0.0d0
+  int_leaf_litter_c = 0.0d0
+  int_root_litter_c = 0.0d0
+  int_compost       = 0.0d0
+  int_soluble       = 0.0d0
+  int_above         = 0.0d0
+  int_below         = 0.0d0
+  int_yield         = 0.0d0
+  int_grain_fill    = 0.0d0
+  int_lai           = 0.0d0
+  int_lai_alloc     = 0.0d0
+  int_pheno         = 1
+
+  ! --- Initialize met smoothing ---
+  int_met_ind     = 1
+  int_met_rolling = 0.0d0
+
+  ! --- Initialize accumulators ---
+  int_temp_acc      = 0.0d0
+  int_precip_acc    = 0.0d0
+  int_gpp_acc       = 0.0d0
+  int_vcmax_acc     = 0.0d0
+  int_num_gpp_day   = 0
+  int_num_vcmax_day = 0
+
+  int_day_idx = 0
+
+  ! --- Main integration loop (hourly) ---
+  do int_hr = 1, INT_NHOURS
+
+    ! --- Start-of-day: read daily inputs ---
+    if (mod(int_hr - 1, 24) == 0) then
+      int_day_idx   = int_day_idx + 1
+      int_lai_prev  = int_lai
+      int_lai       = int_lai_day(int_day_idx)
+      int_delta_lai = int_lai - int_lai_prev
+      int_fapar     = 1.0d0 - exp(-k_ext * int_lai)
+      ! Management
+      int_md%management_type     = int_manage_type(int_day_idx)
+      int_md%management_c_input  = int_manage_c_in(int_day_idx)
+      int_md%management_c_output = int_manage_c_out(int_day_idx)
+      int_md%management_n_input  = 0.0d0
+      int_md%management_n_output = 0.0d0
+    end if
+
+    ! --- Read hourly forcing ---
+    int_temp = int_temp_hr(int_hr)   ! K
+    int_rg   = int_rg_hr(int_hr)     ! W m-2
+    int_prec = int_prec_hr(int_hr)   ! kg m-2 s-1
+    int_vpd  = int_vpd_hr(int_hr)    ! Pa
+    int_pres = int_pres_hr(int_hr)   ! Pa
+    int_co2  = int_co2_hr(int_hr)    ! mol/mol
+    int_wind = int_wind_hr(int_hr)   ! m s-1
+
+    ! --- P-Hydro ---
+    int_psi_soil = int_sw_state%Psi
+    if (int_lai > 1.0d-6) then
+      call pmodel_hydraulics_numerical( &
+          int_temp - 273.15d0, int_rg * 2.1d0 / int_lai, int_vpd, &
+          int_co2 * 1.0d6, int_pres, int_fapar, &
+          int_psi_soil, rdark, &
+          int_jmax, int_dpsi, int_gs, int_aj, int_ci, int_chi, &
+          int_vcmax_hr, int_profit, int_chi_jmax_lim)
+      int_gpp_hr = (int_aj + rdark * int_vcmax_hr) * c_molmass &
+                   * 1.0d-6 * 1.0d-3 * int_lai
+    else
+      int_jmax = 0.0d0;  int_dpsi = 0.0d0;  int_gs = 0.0d0
+      int_aj   = 0.0d0;  int_ci   = 0.0d0;  int_chi = 0.0d0
+      int_vcmax_hr = 0.0d0; int_profit = 0.0d0; int_chi_jmax_lim = 0.0d0
+      int_gpp_hr = 0.0d0
+    end if
+
+    ! --- Transpiration ---
+    if (ISNAN(int_gs) .or. int_lai < 1.0d-6) then
+      int_tr_phydro = 0.0d0
+    else
+      int_tr_phydro = 1.6d0 * int_gs * (int_vpd / int_pres) * &
+                      h2o_molmass / density_h2o(int_temp - 273.15d0, int_pres) * int_lai
+    end if
+
+    ! --- Net radiation ---
+    int_rn = int_rg * 0.7d0
+
+    ! --- Water balance ---
+    call reset_spafhy_flux(int_cw_flux, int_sw_flux)
+    call canopy_water_flux(int_rn, int_temp - 273.15d0, int_prec, int_vpd, &
+                           int_wind, int_pres, int_fapar, int_lai, &
+                           int_cw_state, int_cw_flux, int_sw_state, int_sp)
+    int_cw_flux%ET = int_tr_phydro * (time_step * 3600.0d0) + &
+                     int_cw_flux%SoilEvap + int_cw_flux%CanopyEvap
+    int_tr_spafhy = int_tr_phydro * (time_step * 3600.0d0)
+    int_latflow = 0.0d0
+    call soil_water(int_sw_state, int_sw_flux, int_sp, &
+                    int_cw_flux%PotInfiltration, &
+                    int_tr_spafhy, int_cw_flux%SoilEvap, int_latflow)
+
+    ! --- Exponential smoothing (obs_snowdepth=false) ---
+    int_met_daily(1) = int_temp - 273.15d0
+    int_met_daily(2) = int_prec + int_cw_flux%Melt / (time_step * 3600.0d0)
+    call exponential_smooth_met(int_met_daily, int_met_rolling, int_met_ind)
+
+    ! --- Accumulate daily sums ---
+    int_temp_acc   = int_temp_acc   + int_met_rolling(1)
+    int_precip_acc = int_precip_acc + int_met_rolling(2) * time_step * 3600.0d0
+    if (ISNAN(int_aj) .or. (int_aj < 0.0d0)) then
+      int_gpp_hr = 0.0d0
+    else
+      int_num_gpp_day = int_num_gpp_day + 1
+    end if
+    int_gpp_acc = int_gpp_acc + int_gpp_hr
+    if (ISNAN(int_vcmax_hr) .or. (int_vcmax_hr <= 0.0d0)) then
+      int_vcmax_hr = 0.0d0
+    else
+      int_num_vcmax_day = int_num_vcmax_day + 1
+    end if
+    int_vcmax_acc = int_vcmax_acc + int_vcmax_hr
+
+    ! --- End-of-day step (every 24 hours) ---
+    if (mod(int_hr, 24) == 0) then
+      ! Daily averages
+      int_temp_avg = int_temp_acc / 24.0d0
+      if (int_num_gpp_day == 0) then
+        int_gpp_avg = 0.0d0
+      else
+        int_gpp_avg = int_gpp_acc / dble(int_num_gpp_day)
+      end if
+      if (int_num_vcmax_day == 0) then
+        int_vcmax_avg = 0.0d0
+      else
+        int_vcmax_avg = int_vcmax_acc / dble(int_num_vcmax_day)
+      end if
+      int_leaf_rdark_day = rdark * int_vcmax_avg * c_molmass &
+                           * 1.0d-6 * 1.0d-3 * int_lai
+
+      ! --- Allocation ---
+      call invert_alloc(int_delta_lai, int_ap, int_leaf_rdark_day, &
+                        int_temp_avg, int_leaf_litter_c, int_gpp_avg, &
+                        int_cleaf, int_cstem, int_md, int_pheno)
+      call alloc_hypothesis_2(int_temp_avg, int_gpp_avg, int_npp_day, &
+                              int_leaf_rdark_day, int_auto_resp, &
+                              int_croot, int_cleaf, int_cstem, int_cgrain, &
+                              int_leaf_litter_c, int_root_litter_c, &
+                              int_compost, int_above, int_below, int_yield, &
+                              int_lai_alloc, int_ap, int_grain_fill, &
+                              int_md, int_pheno)
+
+      ! --- Yasso decomposition (inline wrapper) ---
+      int_input_cfract = 0.0d0
+      int_ctend = 0.0d0
+      int_ntend = 0.0d0
+      call inputs_to_fractions(int_leaf_litter_c, int_root_litter_c, &
+                               int_soluble, int_compost, int_input_cfract)
+      call decompose(param_y20_map, 1.0d0, int_temp_avg, int_precip_acc, &
+                     int_cstate, int_nstate, int_ctend, int_ntend)
+      int_cstate = int_cstate + int_ctend + int_input_cfract
+      int_nstate = int_nstate + int_ntend
+
+      ! --- Respiration and NEE ---
+      int_hetero_resp = sum(-int_ctend) / 24.0d0 / 3600.0d0
+      int_total_resp  = int_hetero_resp + int_auto_resp / 24.0d0 / 3600.0d0
+      int_nee_day     = int_total_resp - int_gpp_avg
+
+      ! --- Log JSONL record ---
+      call log_integration_daily(10, int_day_idx, int_temp_avg, &
+           int_precip_acc, int_gpp_avg, int_nee_day, &
+           int_hetero_resp, int_auto_resp / 24.0d0 / 3600.0d0, &
+           int_cleaf, int_croot, int_cstem, int_cgrain, &
+           int_lai_alloc, int_leaf_litter_c, int_root_litter_c, &
+           sum(int_cstate), int_sw_state%Wliq, int_sw_state%Psi, &
+           int_cstate, int_md%management_type)
+      nrec = nrec + 1
+
+      ! --- Reset accumulators ---
+      int_temp_acc      = 0.0d0
+      int_precip_acc    = 0.0d0
+      int_gpp_acc       = 0.0d0
+      int_vcmax_acc     = 0.0d0
+      int_num_gpp_day   = 0
+      int_num_vcmax_day = 0
+    end if
+  end do
+
   ! --- Close JSONL file and report summary to stdout ---
   close(10)
   write(*, '(A,I0,A)') 'Emitted ', nrec, ' records to fixtures.jsonl'
@@ -1947,6 +2246,48 @@ CONTAINS
       ',"turnover_cleaf":', st_out(6)
     write(u, '(A)') '}}'
   END SUBROUTINE log_invalloc
+
+  ! ================================================================
+  ! Helper: write integration_daily JSONL record
+  ! Logs daily-averaged state from the coupled integration loop.
+  ! ================================================================
+  SUBROUTINE log_integration_daily(u, day, temp_avg, precip_acc, &
+       gpp_avg, nee, hetero_resp, auto_resp, &
+       cleaf, croot, cstem, cgrain, &
+       lai_alloc, litter_cleaf, litter_croot, &
+       soc_total, wliq, psi, cstate, mgmt_type)
+    integer, intent(in) :: u, day, mgmt_type
+    real(8), intent(in) :: temp_avg, precip_acc, gpp_avg, nee
+    real(8), intent(in) :: hetero_resp, auto_resp
+    real(8), intent(in) :: cleaf, croot, cstem, cgrain
+    real(8), intent(in) :: lai_alloc, litter_cleaf, litter_croot
+    real(8), intent(in) :: soc_total, wliq, psi
+    real(8), dimension(5), intent(in) :: cstate
+    ! --- inputs (day index + forcing summary) ---
+    write(u, '(A)', advance='no') '{"fn":"integration_daily","inputs":{'
+    write(u, '(A,I0,A,ES22.15,A,ES22.15)', advance='no') &
+      '"day":', day, ',"temp_avg":', temp_avg, ',"precip_acc":', precip_acc
+    write(u, '(A,I0)', advance='no') ',"management_type":', mgmt_type
+    ! --- output ---
+    write(u, '(A)', advance='no') '},"output":{'
+    write(u, '(A,ES22.15,A,ES22.15)', advance='no') &
+      '"gpp_avg":', gpp_avg, ',"nee":', nee
+    write(u, '(A,ES22.15,A,ES22.15)', advance='no') &
+      ',"hetero_resp":', hetero_resp, ',"auto_resp":', auto_resp
+    write(u, '(A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15)', advance='no') &
+      ',"cleaf":', cleaf, ',"croot":', croot, ',"cstem":', cstem, ',"cgrain":', cgrain
+    write(u, '(A,ES22.15)', advance='no') ',"lai_alloc":', lai_alloc
+    write(u, '(A,ES22.15,A,ES22.15)', advance='no') &
+      ',"litter_cleaf":', litter_cleaf, ',"litter_croot":', litter_croot
+    write(u, '(A,ES22.15)', advance='no') ',"soc_total":', soc_total
+    write(u, '(A,ES22.15,A,ES22.15)', advance='no') &
+      ',"wliq":', wliq, ',"psi":', psi
+    ! Yasso AWENH pool breakdown
+    write(u, '(A)', advance='no') ',"cstate":['
+    write(u, '(ES22.15,A,ES22.15,A,ES22.15,A,ES22.15,A,ES22.15)', advance='no') &
+      cstate(1), ',', cstate(2), ',', cstate(3), ',', cstate(4), ',', cstate(5)
+    write(u, '(A)') ']}}'
+  END SUBROUTINE log_integration_daily
 
   ! ================================================================
   ! Duplicated private functions from water_mod.f90

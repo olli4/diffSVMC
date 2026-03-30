@@ -22,7 +22,7 @@ export function exponentialSmoothMet(
 
   if (metInd === 1) {
     // First call: initialize rolling to daily values
-    const newRolling = metDaily.add(0); // clone
+    const newRolling = metDaily.ref; // zero-copy refcount increment
     return { metRolling: newRolling, metInd: metInd + 1 };
   }
 

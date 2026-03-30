@@ -18,7 +18,7 @@ export function calcAssimLightLimited(
   jmax: np.Array,
   par: ParPhotosynth,
 ): { ci: np.Array; aj: np.Array } {
-  using ca = par.ca.add(0); // clone
+  using ca = par.ca.ref;
   using _gs_tmp = gs.mul(1e6);
   using gs0 = _gs_tmp.div(par.patm); // convert to µmol/m²/s/Pa
 
@@ -30,7 +30,7 @@ export function calcAssimLightLimited(
   using _jaxTmp1 = ratio2.add(1);
   using denom = np.sqrt(_jaxTmp1);
   using jlim = phi0iabs.div(denom);
-  using d = par.delta.add(0); // clone
+  using d = par.delta.ref;
 
   // Quadratic: A*ci² + B*ci + C = 0
   using A = gs0.mul(-1);

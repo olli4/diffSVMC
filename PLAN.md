@@ -171,7 +171,7 @@ Quality bar carried over from Phase 3:
 1. **Port `invert_alloc` and `alloc_hypothesis_2` to TypeScript** (`packages/svmc-js/src/allocation/`). Use the same `using`/nonconsuming patterns as YASSO TS modules.
 2. **Add TS allocation fixture-playback tests** exercising all 13 `alloc_hypothesis_2` + 14 `invert_alloc` reference cases with `checkLeaks`.
 3. **Update `branch-coverage.json`** to set `ts_tested: true` on all 31 allocation branches.
-4. **Create a 7-day Qvidja integration fixture** from the reference replay: extract a short multi-regime slice, run it through the Fortran harness, capture hourly/daily outputs plus derived summaries (annualized GPP, NEE, ET, final SOC, peak LAI). Add to `packages/svmc-ref/fixtures/integration.json`.
+4. ✅ **Created 35-day Qvidja integration fixture** from cold-start reference replay: runs the coupled hourly/daily SVMC loop (P-Hydro → canopy_water_flux → soil_water → allocation → Yasso decomposition) for 35 days with Qvidja default parameters and observed forcing, capturing the first harvest event at day 34. Produces `packages/svmc-ref/fixtures/integration.json` with 35 `integration_daily` records including GPP, NEE, carbon pools, SOC, soil moisture, and management regime switches.
 
 ## Phase 5: Main SVMC Integration Loop
 

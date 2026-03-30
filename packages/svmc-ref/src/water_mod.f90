@@ -17,6 +17,7 @@ MODULE water_mod
 
   !Public member functions:
   public :: initialization_spafhy
+  public :: reset_spafhy_flux
   public :: canopy_water_flux   ! require inputdata for p-hydro module
 
   public :: soil_water

@@ -171,9 +171,9 @@ function optimiseMidtermMultiImpl(
   using logJmax = lax.dynamicIndexInDim(bestParams, 0, 0, false);
   using dpsiRaw = lax.dynamicIndexInDim(bestParams, 1, 0, false);
   using jmaxRaw = np.exp(logJmax);
-  const jmax = jmaxRaw.add(0);
-  const dpsi = dpsiRaw.add(0);
-  const objectiveLoss = bestLoss.add(0);
+  const jmax = jmaxRaw.ref;
+  const dpsi = dpsiRaw.ref;
+  const objectiveLoss = bestLoss.ref;
   tree.dispose(finalCarry);
   return {
     jmax,
@@ -416,8 +416,8 @@ export function pmodelHydraulicsNumerical(
   // Evaluate diagnostics at optimum
   using profitRaw = opt.objectiveLoss.neg();
   const profit = np.array(profitRaw.item() as number);
-  const jmax = opt.jmax.add(0);
-  const dpsiOut = opt.dpsi.add(0);
+  const jmax = opt.jmax.ref;
+  const dpsiOut = opt.dpsi.ref;
   tree.dispose(opt);
   using gsVal = calcGs(dpsiOut, psiSoilNp, parPlant, parEnv);
   const gs = np.array(gsVal.item() as number); // clone to decouple lifetime

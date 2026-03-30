@@ -99,7 +99,7 @@ export function aerodynamics(
   using rb_val = _rbV2.mul(_jaxTmp18);
 
   // When LAI > eps, use rb_val; otherwise 0 (handled by LAI+eps above)
-  const rb = rb_val.add(0); // clone
+  const rb = rb_val.ref; // zero-copy refcount increment
 
   const ra = ra_base.add(rb);
 
