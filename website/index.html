@@ -77,6 +77,9 @@ footer a { color: var(--accent); }
   This demo replays the vendored Qvidja reference inputs used for the maintained
   SVMC v1.0.0 test case rather than synthetic forcing.
 </p>
+<div style="font-size:.8rem;margin-bottom:.5rem">
+  <span id="sab-check"></span>
+</div>
 <div id="status" class="loading">Initializing WebR…</div>
 
 <div class="grid">
@@ -212,6 +215,16 @@ const runBtn = document.getElementById("run-btn");
 const referencePeriod = document.getElementById("reference-period");
 const referenceSource = document.getElementById("reference-source");
 
+// ---- SharedArrayBuffer check ----
+const sabEl = document.getElementById("sab-check");
+if (typeof SharedArrayBuffer !== "undefined") {
+  sabEl.textContent = "\u2705 SharedArrayBuffer available (cross-origin isolated)";
+  sabEl.style.color = "var(--ok)";
+} else {
+  sabEl.textContent = "\u274c SharedArrayBuffer unavailable \u2014 WebR requires cross-origin isolation";
+  sabEl.style.color = "#dc3545";
+}
+
 // ---- boot WebR & install SVMCwebr ----
 status.textContent = "Loading WebR runtime…";
 const webR = new WebR();
@@ -237,7 +250,8 @@ function repoUrl() {
   if (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") {
     return loc.origin;
   }
-  return loc.origin + loc.pathname.replace(/\/demo\/?.*$/, "/");
+  // On GitHub Pages the CRAN repo lives at /diffSVMC/repo/
+  return loc.origin + loc.pathname.replace(/\/?$/, "/") + "repo/";
 }
 
 function val(id) {
@@ -539,8 +553,8 @@ runBtn.addEventListener("click", async () => {
     makeChart("ch-hourly", {
       type: "line",
       data: { labels: hrLabels, datasets: [
-        lineDataset("GPP (µmol/m²/s)", gppSub, "#198754"),
-        lineDataset("Tr (mm/hr)", trSub, "#0dcaf0", "y2"),
+        { ...lineDataset("GPP (µmol/m²/s)", gppSub, "#198754"), borderColor: "rgba(25,135,84,0.55)" },
+        { ...lineDataset("Tr (mm/hr)", trSub, "#0dcaf0", "y2"), borderColor: "rgba(13,202,240,0.55)" },
       ]},
       options: chartOpts("Day", "µmol m⁻² s⁻¹", "mm hr⁻¹"),
     });

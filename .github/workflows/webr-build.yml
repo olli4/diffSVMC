@@ -12,9 +12,9 @@
 #     Settings > Pages > Build and deployment > Source: GitHub Actions
 #
 # After deployment:
-#   Demo:  https://<owner>.github.io/diffSVMC/demo/
+#   Demo:  https://<owner>.github.io/diffSVMC/
 #   Repo:  install.packages("SVMCwebr",
-#            repos = c("https://<owner>.github.io/diffSVMC/",
+#            repos = c("https://<owner>.github.io/diffSVMC/repo/",
 #                      "https://repo.r-wasm.org/"))
 
 name: Build WebR Package
@@ -56,14 +56,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: VITE_BASE=/diffSVMC/demo/ SKIP_WEBR=1 pnpm -C website build:site
+      - run: VITE_BASE=/diffSVMC/ SKIP_WEBR=1 pnpm -C website build:site
 
-      # ---- Assemble site: CRAN repo at root, website at /demo/ ----
+      # ---- Assemble site: website at root, CRAN repo at /repo/ ----
       - name: Assemble _site
         run: |
-          mkdir -p _site/demo
-          cp -r repo/* _site/
-          cp -r website/dist/* _site/demo/
+          mkdir -p _site/repo
+          cp -r website/dist/* _site/
+          cp -r repo/* _site/repo/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
