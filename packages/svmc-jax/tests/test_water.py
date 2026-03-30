@@ -572,3 +572,69 @@ def test_canopy_precip_monotonicity():
         trfalls.append(float(flux.Throughfall))
     diffs = [trfalls[i+1] - trfalls[i] for i in range(len(trfalls)-1)]
     assert all(d > 0 for d in diffs), f"throughfall should increase with precip: {trfalls}"
+
+
+def test_canopy_water_snow_cold_dry_repeat_stays_finite():
+    """Repeated cold dry steps must not drive canopy state to NaN.
+
+    This specifically guards the JAX-only hazard where canopy evaporation can
+    leave storage at ``-eps`` and the next call evaluates ``0**(-0.4)`` in the
+    exposure coefficient before a branch masks it.
+    """
+    state = CanopyWaterState(
+        CanopyStorage=jnp.array(0.0), SWE=jnp.array(0.0),
+        swe_i=jnp.array(0.0), swe_l=jnp.array(0.0),
+    )
+    params = CanopySnowParams(
+        wmax=jnp.array(0.5), wmaxsnow=jnp.array(4.0),
+        kmelt=jnp.array(2.31e-8), kfreeze=jnp.array(5.79e-9),
+        frac_snowliq=jnp.array(0.05), gsoil=jnp.array(0.01),
+    )
+
+    for _ in range(8):
+        state, flux = canopy_water_snow(
+            state, params,
+            tc=jnp.array(-5.0),
+            pre=jnp.array(0.0),
+            ae=jnp.array(50.0),
+            d=jnp.array(400.0),
+            ra=jnp.array(33.0),
+            u=jnp.array(2.0),
+            lai=jnp.array(0.7),
+            patm=jnp.array(101325.0),
+            time_step=jnp.array(1.0),
+        )
+        assert jnp.isfinite(state.CanopyStorage)
+        assert jnp.isfinite(state.SWE)
+        assert jnp.isfinite(flux.CanopyEvap)
+        assert float(state.CanopyStorage) >= 0.0
+
+
+def test_canopy_water_snow_tiny_storage_cold_dry_stays_finite():
+    """Tiny positive storage on the sublimation path must remain finite."""
+    state = CanopyWaterState(
+        CanopyStorage=jnp.array(1.0e-20), SWE=jnp.array(0.0),
+        swe_i=jnp.array(0.0), swe_l=jnp.array(0.0),
+    )
+    params = CanopySnowParams(
+        wmax=jnp.array(0.5), wmaxsnow=jnp.array(4.0),
+        kmelt=jnp.array(2.31e-8), kfreeze=jnp.array(5.79e-9),
+        frac_snowliq=jnp.array(0.05), gsoil=jnp.array(0.01),
+    )
+
+    new_state, flux = canopy_water_snow(
+        state, params,
+        tc=jnp.array(-5.0),
+        pre=jnp.array(0.0),
+        ae=jnp.array(50.0),
+        d=jnp.array(400.0),
+        ra=jnp.array(33.0),
+        u=jnp.array(2.0),
+        lai=jnp.array(0.7),
+        patm=jnp.array(101325.0),
+        time_step=jnp.array(1.0),
+    )
+
+    assert jnp.isfinite(new_state.CanopyStorage)
+    assert jnp.isfinite(flux.CanopyEvap)
+    assert float(new_state.CanopyStorage) >= 0.0

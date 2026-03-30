@@ -212,10 +212,13 @@ def canopy_water_snow(
     ga = 1.0 / ra
 
     # ── Evaporation/sublimation from canopy ──
-    # Guard division by zero when wmaxsnow_tot = 0 (LAI = 0)
-    ce = 0.01 * ((w + eps) / jnp.maximum(wmaxsnow_tot, eps)) ** (-0.4)  # exposure coeff
+    # Guard: use max(w, eps) in Ce to avoid 0^(-0.4)=Inf which produces
+    # NaN via Inf*0 in gi.  Fortran avoids this through if/else short-
+    # circuit evaluation; JAX evaluates all branches unconditionally.
+    w_safe = jnp.maximum(w, eps)
+    ce = 0.01 * (w_safe / jnp.maximum(wmaxsnow_tot, eps)) ** (-0.4)  # exposure coeff
     sh = 1.79 + 3.0 * jnp.sqrt(u)  # Sherwood number
-    gi = sh * w * ce / 7.68 + eps   # conductance for sublimation (m/s)
+    gi = sh * w_safe * ce / 7.68 + eps   # conductance for sublimation (m/s)
 
     # Sublimation rate (when no precip and T <= Tmin)
     erate_sublim = dt / ls * penman_monteith(ae, d, tc, gi, ga, patm)
@@ -257,9 +260,9 @@ def canopy_water_snow(
     # Update canopy storage after interception
     w = w + interc
 
-    # Evaporate from canopy
-    canopy_evap = jnp.minimum(erate, w + eps)
-    w = w - canopy_evap
+    # Evaporate from canopy (clamp w >= 0 — canopy storage is non-negative)
+    canopy_evap = jnp.minimum(erate, jnp.maximum(0.0, w))
+    w = jnp.maximum(0.0, w - canopy_evap)
 
     # Throughfall
     trfall = prec + unload - interc
