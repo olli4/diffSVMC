@@ -56,7 +56,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: SKIP_WEBR=1 pnpm -C website build:site
+      - run: VITE_BASE=/diffSVMC/demo/ SKIP_WEBR=1 pnpm -C website build:site
 
       # ---- Assemble site: CRAN repo at root, website at /demo/ ----
       - name: Assemble _site
