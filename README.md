@@ -48,7 +48,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 | 3 | SpaFHy canopy & soil water balance | ✅ Complete |
 | 4 | Carbon allocation & Yasso20 | In progress |
 | 5 | Main SVMC integration loop | Planned |
-| 6 | Interactive web application | Planned |
+| 6 | Interactive web application | In progress (demo live) |
 
 ## Quick start
 
@@ -107,9 +107,12 @@ that support conservative porting work.
 
 ### Website (interactive demo)
 
-The `website/` package provides an interactive browser demo of the
-allocation model running via [WebR](https://docs.r-wasm.org/webr/latest/)
-(Fortran compiled to WebAssembly).
+The `website/` package provides an interactive browser demo of the full
+SVMC model running via [WebR](https://docs.r-wasm.org/webr/latest/)
+(Fortran compiled to WebAssembly). It replays the vendored Qvidja
+reference inputs (ERA5-Land forcing, Sentinel-2 LAI, management events)
+for 1697 days and renders live charts of GPP, NEE, carbon pools, soil
+moisture, and stomatal conductance.
 
 ```bash
 # Development server (port 5173, with COOP/COEP headers for SharedArrayBuffer)
@@ -118,6 +121,19 @@ pnpm -C website dev
 # Production build (WebR WASM package + Vite)
 pnpm build
 ```
+
+On GitHub Pages, a `coi-serviceworker` provides the COOP/COEP headers
+that SharedArrayBuffer requires (GitHub Pages cannot set custom headers).
+
+### Performance
+
+Full 1697-day Qvidja reference run (40,728 hourly steps) on an Intel
+N100 mini-PC:
+
+| Runtime | Time | Slowdown |
+|---|---|---|
+| Native R/Fortran | 1.6 s | 1× |
+| WebR/WASM (Chromium) | 5.4 s | ~3.4× |
 
 The first `pnpm build` uses Docker to compile the R package to WASM via
 the `ghcr.io/r-wasm/webr:main` image. Subsequent builds skip this step
