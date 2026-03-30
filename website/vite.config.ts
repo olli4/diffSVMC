@@ -1,3 +1,4 @@
+import { resolve } from "path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -5,6 +6,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     target: "esnext",
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        comparison: resolve(__dirname, "comparison.html"),
+      },
+    },
   },
   server: {
     port: 5173,

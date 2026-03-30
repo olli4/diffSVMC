@@ -418,7 +418,7 @@ def _make_daily_step(
             jnp.array(cratio_root), jnp.array(cratio_biomass),
             jnp.array(harvest_index),
             jnp.array(turnover_cleaf), jnp.array(turnover_croot),
-            jnp.array(sla), jnp.array(q10), jnp.array(float(invert_option)),
+            jnp.array(sla), jnp.array(q10), jnp.float64(invert_option),
             forcing.management_type, forcing.management_c_in, forcing.management_c_out,
             jnp.array(pft_is_oat), carry.pheno,
         )
@@ -437,7 +437,7 @@ def _make_daily_step(
             jnp.array(cratio_resp), inv_cratio_leaf,
             inv_cratio_root, jnp.array(cratio_biomass),
             inv_turnover_cleaf, jnp.array(turnover_croot),
-            jnp.array(sla), jnp.array(q10), jnp.array(float(invert_option)),
+            jnp.array(sla), jnp.array(q10), jnp.float64(invert_option),
             forcing.management_type, forcing.management_c_in, forcing.management_c_out,
             jnp.array(pft_is_oat), carry.pheno,
         )
