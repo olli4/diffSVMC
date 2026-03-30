@@ -18,7 +18,7 @@ packages/
 website/       Interactive demo (Vite, served on GitHub Pages)
 vendor/
   SVMC/        Original Fortran model (git submodule)
-scripts/       CI tooling (branch coverage audit)
+scripts/       CI tooling (branch coverage audit, Fortran vs JAX comparison)
 issues/        Upstream bug reports for SVMC
 ```
 
@@ -107,6 +107,19 @@ python scripts/verify_branch_coverage.py
 ```bash
 python packages/svmc-ref/generate.py
 ```
+
+### Regenerate Fortran vs JAX comparison
+
+```bash
+python scripts/generate_comparison.py
+```
+
+Runs both the Fortran harness and the JAX integration for the full
+Qvidja dataset (1697 days), aligns outputs by explicit day key, and
+writes `website/public/comparison-qvidja.json` with provenance metadata
+(git commit, reference-data SHA256, generation timestamp).  The website
+[comparison page](website/comparison.html) renders overlay charts and
+R² summary cards from this artifact.
 
 `packages/svmc-ref/generate.py` stages the exact maintained reference Fortran sources needed by
 the harness into `packages/svmc-ref/src/` and `packages/svmc-ref/app/` before

@@ -13,17 +13,29 @@ Outputs:
 """
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import shutil
+import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+from svmc_jax.qvidja_replay import build_qvidja_run_kwargs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SVMC_REF = REPO_ROOT / "packages" / "svmc-ref"
 QVIDJA_REF = REPO_ROOT / "website" / "public" / "qvidja-v1-reference.json"
 OUTPUT_PATH = REPO_ROOT / "website" / "public" / "comparison-qvidja.json"
 TMP_WORK_ROOT = REPO_ROOT / "tmp" / "comparison-export"
+
+COMPARE_KEYS = [
+    "gpp_avg", "nee", "hetero_resp", "auto_resp",
+    "cleaf", "croot", "cstem", "cgrain",
+    "lai_alloc", "litter_cleaf", "litter_croot",
+    "soc_total", "wliq", "psi",
+]
 
 # ── Fortran side ──────────────────────────────────────────────────────
 
@@ -97,107 +109,11 @@ def run_jax(ref: dict, ndays: int) -> list[dict]:
     """Run the JAX integration model for *ndays* days."""
     import jax
     jax.config.update("jax_enable_x64", True)
-    import jax.numpy as jnp
     from svmc_jax.integration import run_integration
-
-    defaults = ref["defaults"]
-    hourly = ref["hourly"]
-    daily = ref["daily"]
-
-    nhours = ndays * 24
-
-    # Reshape hourly forcing: (nhours,) → (ndays, 24)
-    hourly_temp = jnp.array(hourly["temp_hr"][:nhours]).reshape(ndays, 24)
-    hourly_rg = jnp.array(hourly["rg_hr"][:nhours]).reshape(ndays, 24)
-    hourly_prec = jnp.array(hourly["prec_hr"][:nhours]).reshape(ndays, 24)
-    hourly_vpd = jnp.array(hourly["vpd_hr"][:nhours]).reshape(ndays, 24)
-    hourly_pres = jnp.array(hourly["pres_hr"][:nhours]).reshape(ndays, 24)
-    hourly_co2 = jnp.array(hourly["co2_hr"][:nhours]).reshape(ndays, 24)
-    hourly_wind = jnp.array(hourly["wind_hr"][:nhours]).reshape(ndays, 24)
-
-    daily_lai = jnp.array(daily["lai_day"][:ndays])
-    daily_manage_type = jnp.array(
-        [float(x) for x in daily["manage_type"][:ndays]]
-    )
-    daily_manage_c_in = jnp.array(daily["manage_c_in"][:ndays])
-    daily_manage_c_out = jnp.array(daily["manage_c_out"][:ndays])
-
-    # Yasso20 MAP parameter vector (from initialize_totc fixture)
-    yasso_param = jnp.array([
-        0.51, 5.19, 0.13, 0.1, 0.5, 0.0, 1.0, 1.0, 0.99, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.163, 0.0, -0.0, 0.0, 0.0, 0.0,
-        0.0, 0.158, -0.002, 0.17, -0.005, 0.067, -0.0, -1.44,
-        -2.0, -6.9, 0.0042, 0.0015, -2.55, 1.24, 0.25,
-    ])
 
     print(f"[JAX] Running integration for {ndays} days …")
     t0 = time.time()
-    _final_carry, daily_outputs = run_integration(
-        hourly_temp=hourly_temp,
-        hourly_rg=hourly_rg,
-        hourly_prec=hourly_prec,
-        hourly_vpd=hourly_vpd,
-        hourly_pres=hourly_pres,
-        hourly_co2=hourly_co2,
-        hourly_wind=hourly_wind,
-        daily_lai=daily_lai,
-        daily_manage_type=daily_manage_type,
-        daily_manage_c_in=daily_manage_c_in,
-        daily_manage_c_out=daily_manage_c_out,
-        # P-Hydro parameters (Qvidja defaults)
-        conductivity=defaults["conductivity"],
-        psi50=defaults["psi50"],
-        b_param=defaults["b"],
-        alpha_cost=defaults["alpha"],
-        gamma_cost=defaults["gamma"],
-        rdark=defaults["rdark"],
-        # SpaFHy soil parameters
-        soil_depth=defaults["soil_depth"],
-        max_poros=defaults["max_poros"],
-        fc=defaults["fc"],
-        wp=defaults["wp"],
-        ksat=defaults["ksat"],
-        n_van=1.14,
-        watres=0.0,
-        alpha_van=5.92,
-        watsat=defaults["max_poros"],
-        maxpond=0.0,
-        # SpaFHy canopy/aero parameters
-        wmax=0.5,
-        wmaxsnow=4.5,
-        kmelt=2.8934e-5,
-        kfreeze=5.79e-6,
-        frac_snowliq=0.05,
-        gsoil=5.0e-3,
-        hc=0.6,
-        w_leaf=0.01,
-        rw=0.20,
-        rwmin=0.02,
-        zmeas=2.0,
-        zground=0.1,
-        zo_ground=0.01,
-        # Allocation parameters
-        cratio_resp=defaults["cratio_resp"],
-        cratio_leaf=defaults["cratio_leaf"],
-        cratio_root=defaults["cratio_root"],
-        cratio_biomass=defaults["cratio_biomass"],
-        harvest_index=defaults["harvest_index"],
-        turnover_cleaf=defaults["turnover_cleaf"],
-        turnover_croot=defaults["turnover_croot"],
-        sla=defaults["sla"],
-        q10=defaults["q10"],
-        invert_option=defaults["invert_option"],
-        pft_is_oat=0.0,
-        # Yasso initialization
-        yasso_param=yasso_param,
-        yasso_totc=defaults["yasso_totc"],
-        yasso_cn_input=defaults["yasso_cn_input"],
-        yasso_fract_root=defaults["yasso_fract_root"],
-        yasso_fract_legacy=0.0,
-        yasso_tempr_c=5.4,
-        yasso_precip_day=1.87,
-        yasso_tempr_ampl=20.0,
-    )
+    _final_carry, daily_outputs = run_integration(**build_qvidja_run_kwargs(ref, ndays))
     elapsed = time.time() - t0
     print(f"[JAX] Done in {elapsed:.1f}s")
 
@@ -211,7 +127,7 @@ def run_jax(ref: dict, ndays: int) -> list[dict]:
 
     jax_records = []
     for day_idx in range(ndays):
-        out = {}
+        out = {"day": day_idx + 1}
         for key in scalar_keys:
             out[key] = float(getattr(daily_outputs, key)[day_idx])
         out["cstate"] = [float(x) for x in daily_outputs.cstate[day_idx]]
@@ -224,6 +140,60 @@ def run_jax(ref: dict, ndays: int) -> list[dict]:
 # ── Combine & write ──────────────────────────────────────────────────
 
 
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def get_git_commit() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def get_git_dirty() -> bool:
+    try:
+        status = subprocess.check_output(
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return bool(status.strip())
+
+
+def build_metadata(ref_path: Path, ndays: int) -> dict:
+    return {
+        "site": "Qvidja",
+        "ndays": ndays,
+        "generated_by": "scripts/generate_comparison.py",
+        "generated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "git_commit": get_git_commit(),
+        "git_dirty": get_git_dirty(),
+        "qvidja_reference_sha256": sha256_file(ref_path),
+        "compare_keys": COMPARE_KEYS,
+    }
+
+
+def index_records_by_day(records: list[dict], *, label: str, ndays: int, day_getter) -> dict[int, dict]:
+    indexed: dict[int, dict] = {}
+    for record in records:
+        day = int(day_getter(record))
+        if day < 1 or day > ndays:
+            raise RuntimeError(f"{label} record day {day} outside expected range 1..{ndays}")
+        if day in indexed:
+            raise RuntimeError(f"{label} records contain duplicate day {day}")
+        indexed[day] = record
+
+    missing_days = [day for day in range(1, ndays + 1) if day not in indexed]
+    if missing_days:
+        raise RuntimeError(f"{label} records missing days: {missing_days[:10]}")
+    return indexed
+
+
 def build_comparison(
     ref: dict,
     fortran_records: list[dict],
@@ -234,13 +204,19 @@ def build_comparison(
     daily = ref["daily"]
     dates = daily.get("dates", [f"day-{i+1}" for i in range(ndays)])[:ndays]
 
-    # Fields to compare (present in both Fortran and JAX outputs)
-    compare_keys = [
-        "gpp_avg", "nee", "hetero_resp", "auto_resp",
-        "cleaf", "croot", "cstem", "cgrain",
-        "lai_alloc", "litter_cleaf", "litter_croot",
-        "soc_total", "wliq", "psi",
-    ]
+    fortran_by_day = index_records_by_day(
+        fortran_records,
+        label="Fortran",
+        ndays=ndays,
+        day_getter=lambda record: record["inputs"]["day"],
+    )
+    jax_by_day = index_records_by_day(
+        jax_records,
+        label="JAX",
+        ndays=ndays,
+        day_getter=lambda record: record["day"],
+    )
+    ordered_days = list(range(1, ndays + 1))
 
     fortran_series = {}
     jax_series = {}
@@ -248,9 +224,9 @@ def build_comparison(
 
     import numpy as np
 
-    for key in compare_keys:
-        f_vals = [r["output"][key] for r in fortran_records]
-        j_vals = [r[key] for r in jax_records]
+    for key in COMPARE_KEYS:
+        f_vals = [fortran_by_day[day]["output"][key] for day in ordered_days]
+        j_vals = [jax_by_day[day][key] for day in ordered_days]
         fortran_series[key] = f_vals
         jax_series[key] = j_vals
 
@@ -269,17 +245,15 @@ def build_comparison(
         }
 
     # JAX-only fields (not in Fortran harness output)
-    jax_series["et_total"] = [r["et_total"] for r in jax_records]
+    jax_series["et_total"] = [jax_by_day[day]["et_total"] for day in ordered_days]
 
     # LAI from reference for context
     lai_series = [float(x) for x in daily["lai_day"][:ndays]]
 
     return {
         "meta": {
-            "site": "Qvidja",
-            "ndays": ndays,
+            **build_metadata(QVIDJA_REF, ndays),
             "dates": dates,
-            "generated_by": "scripts/generate_comparison.py",
         },
         "lai": lai_series,
         "fortran": fortran_series,

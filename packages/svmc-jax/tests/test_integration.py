@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from svmc_jax.integration import run_integration
+from svmc_jax.qvidja_replay import build_qvidja_run_kwargs
 
 # ── Paths ─────────────────────────────────────────────────────────────
 
@@ -61,15 +62,6 @@ def _load_integration_fixture():
     return data["integration_daily"]
 
 
-# Yasso20 MAP parameter vector (from initialize_totc fixture)
-_YASSO_PARAM = jnp.array([
-    0.51, 5.19, 0.13, 0.1, 0.5, 0.0, 1.0, 1.0, 0.99, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.163, 0.0, -0.0, 0.0, 0.0, 0.0,
-    0.0, 0.158, -0.002, 0.17, -0.005, 0.067, -0.0, -1.44,
-    -2.0, -6.9, 0.0042, 0.0015, -2.55, 1.24, 0.25,
-])
-
-
 # ── Test ──────────────────────────────────────────────────────────────
 
 @pytest.mark.slow
@@ -78,93 +70,10 @@ def test_integration_35day_replay():
 
     ref = _load_qvidja_ref()
     fixture = _load_integration_fixture()
-    defaults = ref["defaults"]
-    hourly = ref["hourly"]
-    daily = ref["daily"]
-
     assert len(fixture) == _NDAYS
 
-    # Reshape hourly forcing: (840,) → (35, 24)
-    hourly_temp = jnp.array(hourly["temp_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-    hourly_rg = jnp.array(hourly["rg_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-    hourly_prec = jnp.array(hourly["prec_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-    hourly_vpd = jnp.array(hourly["vpd_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-    hourly_pres = jnp.array(hourly["pres_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-    hourly_co2 = jnp.array(hourly["co2_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-    hourly_wind = jnp.array(hourly["wind_hr"][:_NHOURS]).reshape(_NDAYS, 24)
-
-    daily_lai = jnp.array(daily["lai_day"][:_NDAYS])
-    daily_manage_type = jnp.array([float(x) for x in daily["manage_type"][:_NDAYS]])
-    daily_manage_c_in = jnp.array(daily["manage_c_in"][:_NDAYS])
-    daily_manage_c_out = jnp.array(daily["manage_c_out"][:_NDAYS])
-
     # Run the composed integration
-    _final_carry, daily_outputs = run_integration(
-        hourly_temp=hourly_temp,
-        hourly_rg=hourly_rg,
-        hourly_prec=hourly_prec,
-        hourly_vpd=hourly_vpd,
-        hourly_pres=hourly_pres,
-        hourly_co2=hourly_co2,
-        hourly_wind=hourly_wind,
-        daily_lai=daily_lai,
-        daily_manage_type=daily_manage_type,
-        daily_manage_c_in=daily_manage_c_in,
-        daily_manage_c_out=daily_manage_c_out,
-        # P-Hydro parameters (Qvidja defaults)
-        conductivity=defaults["conductivity"],
-        psi50=defaults["psi50"],
-        b_param=defaults["b"],
-        alpha_cost=defaults["alpha"],
-        gamma_cost=defaults["gamma"],
-        rdark=defaults["rdark"],
-        # SpaFHy soil parameters
-        soil_depth=defaults["soil_depth"],
-        max_poros=defaults["max_poros"],
-        fc=defaults["fc"],
-        wp=defaults["wp"],
-        ksat=defaults["ksat"],
-        n_van=1.14,
-        watres=0.0,
-        alpha_van=5.92,
-        watsat=defaults["max_poros"],
-        maxpond=0.0,
-        # SpaFHy canopy/aero parameters
-        wmax=0.5,
-        wmaxsnow=4.5,
-        kmelt=2.8934e-5,
-        kfreeze=5.79e-6,
-        frac_snowliq=0.05,
-        gsoil=5.0e-3,
-        hc=0.6,
-        w_leaf=0.01,
-        rw=0.20,
-        rwmin=0.02,
-        zmeas=2.0,
-        zground=0.1,
-        zo_ground=0.01,
-        # Allocation parameters
-        cratio_resp=defaults["cratio_resp"],
-        cratio_leaf=defaults["cratio_leaf"],
-        cratio_root=defaults["cratio_root"],
-        cratio_biomass=defaults["cratio_biomass"],
-        harvest_index=defaults["harvest_index"],
-        turnover_cleaf=defaults["turnover_cleaf"],
-        turnover_croot=defaults["turnover_croot"],
-        sla=defaults["sla"],
-        q10=defaults["q10"],
-        invert_option=defaults["invert_option"],
-        pft_is_oat=0.0,  # Qvidja is grass
-        # Yasso initialization
-        yasso_param=_YASSO_PARAM,
-        yasso_totc=defaults["yasso_totc"],
-        yasso_cn_input=defaults["yasso_cn_input"],
-        yasso_fract_root=defaults["yasso_fract_root"],
-        yasso_fract_legacy=0.0,  # Fortran harness hardcodes 0.0d0
-        yasso_tempr_c=5.4,
-        yasso_precip_day=1.87,
-        yasso_tempr_ampl=20.0,
-    )
+    _final_carry, daily_outputs = run_integration(**build_qvidja_run_kwargs(ref, _NDAYS))
 
     # Compare per-day outputs against the Fortran reference fixture
     scalar_keys = [
@@ -257,66 +166,9 @@ def _run_1day(defaults, hourly, daily, **overrides):
     Keyword overrides are applied to the hourly forcing arrays *after*
     the default slice-and-reshape (e.g. ``hourly_temp=custom_array``).
     """
-    kw = dict(
-        hourly_temp=jnp.array(hourly["temp_hr"][:24]).reshape(1, 24),
-        hourly_rg=jnp.array(hourly["rg_hr"][:24]).reshape(1, 24),
-        hourly_prec=jnp.array(hourly["prec_hr"][:24]).reshape(1, 24),
-        hourly_vpd=jnp.array(hourly["vpd_hr"][:24]).reshape(1, 24),
-        hourly_pres=jnp.array(hourly["pres_hr"][:24]).reshape(1, 24),
-        hourly_co2=jnp.array(hourly["co2_hr"][:24]).reshape(1, 24),
-        hourly_wind=jnp.array(hourly["wind_hr"][:24]).reshape(1, 24),
-        daily_lai=jnp.array(daily["lai_day"][:1]),
-        daily_manage_type=jnp.array([float(x) for x in daily["manage_type"][:1]]),
-        daily_manage_c_in=jnp.array(daily["manage_c_in"][:1]),
-        daily_manage_c_out=jnp.array(daily["manage_c_out"][:1]),
-        conductivity=defaults["conductivity"],
-        psi50=defaults["psi50"],
-        b_param=defaults["b"],
-        alpha_cost=defaults["alpha"],
-        gamma_cost=defaults["gamma"],
-        rdark=defaults["rdark"],
-        soil_depth=defaults["soil_depth"],
-        max_poros=defaults["max_poros"],
-        fc=defaults["fc"],
-        wp=defaults["wp"],
-        ksat=defaults["ksat"],
-        n_van=1.14,
-        watres=0.0,
-        alpha_van=5.92,
-        watsat=defaults["max_poros"],
-        maxpond=0.0,
-        wmax=0.5,
-        wmaxsnow=4.5,
-        kmelt=2.8934e-5,
-        kfreeze=5.79e-6,
-        frac_snowliq=0.05,
-        gsoil=5.0e-3,
-        hc=0.6,
-        w_leaf=0.01,
-        rw=0.20,
-        rwmin=0.02,
-        zmeas=2.0,
-        zground=0.1,
-        zo_ground=0.01,
-        cratio_resp=defaults["cratio_resp"],
-        cratio_leaf=defaults["cratio_leaf"],
-        cratio_root=defaults["cratio_root"],
-        cratio_biomass=defaults["cratio_biomass"],
-        harvest_index=defaults["harvest_index"],
-        turnover_cleaf=defaults["turnover_cleaf"],
-        turnover_croot=defaults["turnover_croot"],
-        sla=defaults["sla"],
-        q10=defaults["q10"],
-        invert_option=defaults["invert_option"],
-        pft_is_oat=0.0,
-        yasso_param=_YASSO_PARAM,
-        yasso_totc=defaults["yasso_totc"],
-        yasso_cn_input=defaults["yasso_cn_input"],
-        yasso_fract_root=defaults["yasso_fract_root"],
-        yasso_fract_legacy=0.0,
-        yasso_tempr_c=5.4,
-        yasso_precip_day=1.87,
-        yasso_tempr_ampl=20.0,
+    kw = build_qvidja_run_kwargs(
+        {"defaults": defaults, "hourly": hourly, "daily": daily},
+        1,
     )
     kw.update(overrides)
     return run_integration(**kw)
