@@ -1,0 +1,2 @@
+# Override Linguist language detection for Fortran include files
+*.inc linguist-language=Fortran
