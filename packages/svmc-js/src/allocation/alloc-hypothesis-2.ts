@@ -21,7 +21,9 @@ function safeDenom(x: np.Array): np.Array {
   using absX = np.abs(x);
   using tooSmall = absX.less(EPS);
   using signX = np.sign(x);
-  using fallback = signX.mul(EPS);
+  using zeroSign = signX.equal(0.0);
+  using fallbackSign = np.where(zeroSign, 1.0, signX);
+  using fallback = fallbackSign.mul(EPS);
   return np.where(tooSmall, fallback, x);
 }
 
@@ -317,7 +319,7 @@ export function allocHypothesis2Fn(
     abovebiomass: np.where(isGrowth, gAbove, dAbove),
     belowbiomass: np.where(isGrowth, gBelow, dBelow),
     yield: np.array(0.0),    // never modified
-    grainFill,               // never modified — caller owns lifetime
+    grainFill: grainFill.add(0.0),
     phenoStage: np.where(isGrowth, 1, 1),  // both paths reset to 1
   };
 }

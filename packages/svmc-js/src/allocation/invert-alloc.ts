@@ -22,7 +22,9 @@ function safeDenom(x: np.Array): np.Array {
   using absX = np.abs(x);
   using tooSmall = absX.less(EPS);
   using signX = np.sign(x);
-  using fallback = signX.mul(EPS);
+  using zeroSign = signX.equal(0.0);
+  using fallbackSign = np.where(zeroSign, 1.0, signX);
+  using fallback = fallbackSign.mul(EPS);
   return np.where(tooSmall, fallback, x);
 }
 
@@ -43,12 +45,14 @@ function safeDenom(x: np.Array): np.Array {
  * @param cratioLeaf - Leaf allocation fraction (input; derived as output for option 1).
  * @param cratioRoot - Root allocation fraction (input; derived as output for option 1).
  * @param cratioBiomass - Carbon fraction of biomass.
+ * @param harvestIndex - Retained for fixture/JAX signature parity; not used here.
  * @param turnoverCleaf - Leaf turnover rate (input; derived as output for option 2).
+ * @param turnoverCroot - Retained for fixture/JAX signature parity; not used here.
  * @param sla - Specific leaf area (m² kg⁻¹).
  * @param q10 - Q10 temperature coefficient.
  * @param invertOption - Inversion mode (1=derive cratio_leaf, 2=derive turnover).
  * @param managementType - 0=none, 1=harvest, 3=grazing, 4=organic.
- * @param managementCInput - Carbon input rate (kg C m⁻² s⁻¹).
+ * @param managementCInput - Retained for fixture/JAX signature parity; not used here.
  * @param managementCOutput - Carbon output rate (kg C m⁻² s⁻¹).
  * @param pftIsOat - 1.0 for oat, 0.0 for grass.
  * @param phenoStage - 1=growth (active), 2=dormancy (no-op).
@@ -67,11 +71,14 @@ export function invertAllocFn(
   cratioLeaf: np.Array,
   cratioRoot: np.Array,
   cratioBiomass: np.Array,
+  _harvestIndex: np.Array,
   turnoverCleaf: np.Array,
+  _turnoverCroot: np.Array,
   sla: np.Array,
   q10: np.Array,
   invertOption: np.Array,
   managementType: np.Array,
+  _managementCInput: np.Array,
   managementCOutput: np.Array,
   pftIsOat: np.Array,
   phenoStage: np.Array,
@@ -179,7 +186,7 @@ export function invertAllocFn(
 
   // ===== INACTIVE (pheno_stage != 1): pass through =====
   return {
-    deltaLai,  // never modified — caller owns lifetime
+    deltaLai: deltaLai.add(0.0),
     litterCleaf: np.where(isActive, outLitterCleaf, litterCleafIn),
     cleaf: np.where(isActive, outCleaf, cleaf),
     cratioLeaf: np.where(isActive, outCratioLeaf, cratioLeaf),
