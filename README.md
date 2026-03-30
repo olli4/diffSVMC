@@ -33,10 +33,25 @@ Each submodel is ported bottom-up (leaf functions — the lowest-level routines 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 
-## Current deviations
+## Current deviations from upstream SVMC
 
-- The TypeScript `matrixExp` helper currently uses a bounded masked-squaring policy (`MAX_J = 20`) because the present `lax.foriLoop` API requires a static loop bound. The current reference fixtures explicitly stay within that bound; widening or removing it is required before using the helper on materially larger matrix norms.
-- Both the JAX and TypeScript `mod5c20` transient solvers split the `exp(At)·z₁ − b` computation into `exp(At)·(A·init) + (exp(At) − I)·b` and use a first-order Taylor approximation (`At·b`) for the second term when `‖At‖ ≤ √ε`. The Fortran reference computes `exp(At)·(A·init + b) − b` directly. The split avoids catastrophic cancellation when `‖At‖` is small (e.g. extreme cold), where the direct subtraction `exp(At)·b − b` loses the `O(At·b)` contribution. Boundary tests verify smooth transition across the threshold in both languages.
+### Zero-radiation P-Hydro guard (harness + JAX)
+
+Upstream SVMC calls P-Hydro on every hour regardless of radiation.  The harness adds `int_rg > 0.0d0` (and the JAX integration mirrors it as `rg > 0.0`) to skip the optimizer when there is no light.  Without this guard the quadratic solver's analytically-zero `aj` picks up ±1e-17 floating-point noise whose sign is compilation-context-dependent, corrupting the `num_gpp` averaging denominator nondeterministically.  Integration fixtures are regenerated with this guard, so fixture values differ from a raw upstream run on zero-PPFD hours.
+
+### P-Hydro optimizer: JAXopt L-BFGS-B with implicit differentiation (JAX)
+
+Upstream Fortran uses L-BFGS-B with finite-difference gradients (`setulb`).  The JAX solver now uses `jaxopt.LBFGSB` with the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`) but exact autodiff gradients.  JAXopt's implicit differentiation computes gradients of the optimal solution from the KKT conditions at the converged point instead of unrolling every optimizer step, so the composed JAX model remains end-to-end differentiable through the optimizer.
+
+The TypeScript solver still uses Optax Adam (512 steps, lr = 0.05) from Phase 2 and has not yet been updated to match the JAX `LBFGSB` path.  Both converge to the same economic optimum within documented tolerances, but the algorithms differ.
+
+### TypeScript `matrixExp` bounded squaring
+
+The TypeScript `matrixExp` helper uses a bounded masked-squaring policy (`MAX_J = 20`) because the present `lax.foriLoop` API requires a static loop bound.  The current reference fixtures explicitly stay within that bound; widening or removing it is required before using the helper on materially larger matrix norms.
+
+### `mod5c20` transient cancellation avoidance (JAX + TS)
+
+Both the JAX and TypeScript `mod5c20` transient solvers split the `exp(At)·z₁ − b` computation into `exp(At)·(A·init) + (exp(At) − I)·b` and use a first-order Taylor approximation (`At·b`) for the second term when `‖At‖ ≤ √ε`.  The Fortran reference computes `exp(At)·(A·init + b) − b` directly.  The split avoids catastrophic cancellation when `‖At‖` is small (e.g. extreme cold), where the direct subtraction `exp(At)·b − b` loses the `O(At·b)` contribution.  Boundary tests verify smooth transition across the threshold in both languages.
 
 ## Current status
 
@@ -46,8 +61,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 | 1 | All leaf functions | ✅ Complete |
 | 2 | P-Hydro assemblies & optimizer | ✅ Complete |
 | 3 | SpaFHy canopy & soil water balance | ✅ Complete |
-| 4 | Carbon allocation & Yasso20 | In progress |
-| 5 | Main SVMC integration loop | Planned |
+| 4 | Carbon allocation & Yasso20 | ✅ Complete |
+| 5 | Main SVMC integration loop | In progress (JAX integration complete) |
 | 6 | Interactive web application | In progress (demo live) |
 
 ## Quick start

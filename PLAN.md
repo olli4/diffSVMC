@@ -76,7 +76,7 @@ Combine the confirmed leaf functions into their dependent wrappers.
 - `calc_assim_light_limited` (depends on `quadratic`). ✅ JAX + TS ported, fixture-tested.
 - `calc_gs` (depends on `scale_conductivity`). ✅ JAX + TS ported, fixture-tested.
 - `fn_profit` (objective function forming the core of P-Hydro optimization). ✅ JAX + TS ported, fixture-tested, OOD gradient-tested.
-- **Optimizer Overhaul (`optimise_midterm_multi`)**: ✅ Both JAX and TS now use projected Optax Adam (512 steps, lr=0.05, grad-clipping=10) with traced autodiff (`jax.value_and_grad` / `valueAndGrad`), replacing both Fortran's finite-difference L-BFGS-B and the earlier scipy/custom-L-BFGS approaches. The entire optimizer runs inside `jit`/`lax.scan` (TS) or `jax.lax.fori_loop` (JAX), keeping the optimization composable with larger JIT-compiled loops. Both fixture-tested against 6 reference cases.
+- **Optimizer Overhaul (`optimise_midterm_multi`)**: ✅ Phase 2 introduced projected Optax Adam (512 steps, lr=0.05, grad-clipping=10) in both JAX and TS, replacing Fortran's finite-difference L-BFGS-B and the earlier scipy/custom-L-BFGS approaches. That Phase 2 JAX implementation was later superseded in Phase 5 by `jaxopt.LBFGSB` with implicit differentiation; the TS solver still uses the Phase 2 Adam path. Both fixture-tested against 6 reference cases.
   - _JAX vs Fortran tolerance: ~0.3% relative. TS default `float32` tolerance: ~5% relative. TS `float64` mode is available via `SVMC_JS_DTYPE=float64` for tighter browser-side parity checks._
   - _Invariant-tested: VPD monotonicity, drought monotonicity, aj/gs/ci consistency._
 - `pmodel_hydraulics_numerical` (the overarching solver wrapper). ✅ JAX + TS ported, 7 fixture reference cases spanning environmental gradients, invariant-tested.
@@ -95,7 +95,7 @@ Combine the confirmed leaf functions into their dependent wrappers.
 
 ### Phase 2 Known Shortcuts
 
-- **Optax replaces scipy/Fortran L-BFGS-B**: The JAX solver uses `optax.adam` inside `jax.lax.fori_loop` instead of `scipy.optimize.minimize`. The TS solver uses `lax.scan` with Optax `adam` + `clipByGlobalNorm`. Both match Fortran reference outputs within tolerance but use a fundamentally different optimizer algorithm (first-order Adam vs quasi-Newton L-BFGS-B).
+- **Optax replaces scipy/Fortran L-BFGS-B** _(superseded by Phase 5 JAXopt L-BFGS-B)_: The JAX solver originally used `optax.adam` inside `jax.lax.fori_loop`; this was replaced in Phase 5 with `jaxopt.LBFGSB`, restoring explicit box constraints and end-to-end differentiability via implicit differentiation. The TS solver still uses `lax.scan` with Optax `adam` + `clipByGlobalNorm`. Both match Fortran reference outputs within tolerance but use fundamentally different optimizer algorithms.
 - **TS precision modes**: `svmc-js` now supports `SVMC_JS_DTYPE=float32|float64`. Solver tests and default browser runs still target `float32` because that is the primary performance mode; `float64` is available for higher-accuracy parity checks and future rollout comparisons.
 
 ## Phase 3: SpaFHy Submodels (Canopy & Soil Water Balance)
@@ -154,7 +154,7 @@ Quality bar carried over from Phase 3:
 
 - **Fortran Build Modernization (`fpm`/`CMake`)**: At this point, integrating the 20+ Yasso and Allocation sub-modules inside the Fortran harness will break the manual `Makefile` dependency ordering. Before writing Yasso harness logs, scrap the `Makefile` and adopt `fpm` (Fortran Package Manager) or `CMake` for reliable automated dependency parsing. Doing this early in Phase 4 defers scope creep but prevents a bottleneck precisely when the Fortran inclusion graph becomes intractable.
 - **Direct-interface adapter audit (`svmc-webr`)**: ✅ Partially addressed. The WebR adapter now propagates `opt_hypothesis`, validates `pft_type_code`, forwards management arrays, and returns YASSO status codes. Remaining: replace the hardcoded Yasso initialization climate defaults with forcing-derived values (see Lesson 5 above) and add wrapper-boundary fixtures for `wrapper_yasso_initialize_totc` and daily decomposition so initialization drift is caught separately from the downstream JAX/TS ports.
-- Allocation modules: `invert_alloc` and `alloc_hypothesis_2`. ✅ JAX ported, fixture-tested, 31 allocation branches tracked. ⬜ TS port pending.
+- Allocation modules: `invert_alloc` and `alloc_hypothesis_2`. ✅ JAX ported, fixture-tested, 35 allocation branches tracked. ✅ TS ported, fixture-tested (13 alloc_hypothesis_2 + 14 invert_alloc + 2 invariant tests), all branches `ts_tested`.
 - Yasso20 Soil Carbon: ✅ All submodels ported to both JAX and TS, fixture-tested.
   - `yasso.initialize_totc` (Setup routines). ✅
   - `yasso.decompose` (Daily decomposition). ✅
@@ -168,9 +168,9 @@ Quality bar carried over from Phase 3:
 
 ### Phase 4 Remaining Work
 
-1. **Port `invert_alloc` and `alloc_hypothesis_2` to TypeScript** (`packages/svmc-js/src/allocation/`). Use the same `using`/nonconsuming patterns as YASSO TS modules.
-2. **Add TS allocation fixture-playback tests** exercising all 13 `alloc_hypothesis_2` + 14 `invert_alloc` reference cases with `checkLeaks`.
-3. **Update `branch-coverage.json`** to set `ts_tested: true` on all 31 allocation branches.
+1. ✅ **Port `invert_alloc` and `alloc_hypothesis_2` to TypeScript** (`packages/svmc-js/src/allocation/`). Used the same `using`/nonconsuming patterns as YASSO TS modules.
+2. ✅ **Add TS allocation fixture-playback tests** exercising all 13 `alloc_hypothesis_2` + 14 `invert_alloc` reference cases with `checkLeaks`. Plus 2 invariant tests (finite outputs at zero biomass). 29 tests total passing.
+3. ✅ **Update `branch-coverage.json`** — all 35 allocation branches have `ts_tested: true`.
 4. ✅ **Created 35-day Qvidja integration fixture** from cold-start reference replay: runs the coupled hourly/daily SVMC loop (P-Hydro → canopy_water_flux → soil_water → allocation → Yasso decomposition) for 35 days with Qvidja default parameters and observed forcing, capturing the first harvest event at day 34. Produces `packages/svmc-ref/fixtures/integration.json` with 35 `integration_daily` records including GPP, NEE, carbon pools, SOC, soil moisture, and management regime switches.
 
 ## Phase 5: Main SVMC Integration Loop
@@ -188,11 +188,12 @@ Quality bar carried over from Phase 3 and the website integration lessons:
 
 - **I/O Boundary Rule**: Keep namelist parsing and netCDF reading in a thin adapter layer separate from the computational core. Submodel functions must accept plain arrays/scalars so they remain testable and composable outside the original SVMC file conventions.
 - **Adapter hardening follow-up (`svmc-webr`)**: ✅ Partially addressed. Status codes for YASSO failures, `opt_hypothesis` propagation, PFT validation, and management forwarding are now in place. Remaining: audit the WASM-only replacement of fatal Yasso guards with silent `return`s and any other adapter defaults that bypass the original file-driven control path.
-- Wire up initializers via the adapter layer: Reading namelists (Configs) and starting `initialization_spafhy` & `wrapper_yasso_initialize_totc`.
-- Construct the **Hourly Loop** using JAX loops (`jax.lax.scan` or `jax.lax.fori_loop`) coupling `P-Hydro` → `canopy_water_flux` → `soil_water`.
-- Construct the **Daily/Yearly Loops** wrapping allocations and Yasso updates.
-- Verify overall system behavior against original Fortran integrated outputs.
-- **JAX replay playback test**: Play back the 7-day integration fixture through the composed JAX model, checking both raw trajectories and derived metrics.
+- ✅ **JAX integration module** (`packages/svmc-jax/src/svmc_jax/integration.py`): Composed JAX integration loop coupling P-Hydro → canopy_water_flux → soil_water → allocation → Yasso decomposition. Uses `jax.lax.scan` for both the inner hourly (24-step) and outer daily loops. Initializes SpaFHy states via `initialization_spafhy` and Yasso C/N pools via `initialize_totc`.
+- ✅ **P-Hydro optimizer overhaul (JAXopt L-BFGS-B)**: Replaced the Optax Adam optimizer in `solver.py` with `jaxopt.LBFGSB`, matching the Fortran box-constrained problem while using exact autodiff gradients. JAXopt implicit differentiation keeps the composed JAX model end-to-end differentiable through the optimizer without unrolling every solver step. All 7 P-Hydro parametric tests pass.
+- ✅ **Zero-radiation guard**: Added `int_rg > 0.0d0` guard to Fortran harness and matching `rg > 0.0` guard in JAX integration, eliminating nondeterministic optimizer noise on zero-PPFD hours where the quadratic solver produces ±1e-17 noise.
+- ✅ **35-day integration fixture regenerated**: `packages/svmc-ref/fixtures/integration.json` regenerated with the zero-radiation guard, ensuring consistent `num_gpp` counting between Fortran and JAX.
+- ✅ **JAX 35-day replay playback test** (`packages/svmc-jax/tests/test_integration.py`): Plays back the 35-day Qvidja cold-start reference replay through the composed JAX model. Per-day validation against Fortran fixture: GPP ≤ 0.9% relative error, water balance ≤ 0.06%, AWENH carbon pools and all scalar outputs within `rtol=1e-2`. NEE/respiration use absolute tolerance (`1e-9`) due to near-cancellation. Includes the first harvest event at day 34.
+- **TS integration port**: Port the JAX integration loop to `@hamk-uas/jax-js-nonconsuming` and validate against the same fixtures.
 - **TS 100+ step rollout test**: Exercise the integration fixture in both `float32` and `float64` modes with `checkLeaks`, verifying that accumulation errors do not diverge fatally from JAX/Fortran `float64` baselines (DoD criterion 7).
 
 ## Phase 6: Interactive Web Application

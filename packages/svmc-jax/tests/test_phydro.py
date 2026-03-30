@@ -364,6 +364,34 @@ def test_pmodel_hydraulics_numerical_profit_positive():
     assert float(result["gs"]) > 0.0
 
 
+def test_pmodel_hydraulics_numerical_differentiable():
+    """Gradients through the full solver should be finite."""
+
+    def loss(psi_soil):
+        result = pmodel_hydraulics_numerical(
+            tc=20.0, ppfd=300.0, vpd=1000.0, co2=400.0,
+            sp=101325.0, fapar=0.9, psi_soil=psi_soil, rdark_leaf=0.015,
+        )
+        return result["gs"]
+
+    g = jax.grad(loss)(jnp.array(-0.5))
+    assert jnp.isfinite(g), f"Gradient through full solver is not finite: {g}"
+
+
+def test_pmodel_hydraulics_numerical_jit_consistent():
+    """Direct and jitted solver calls should agree bitwise enough."""
+    kwargs = dict(
+        tc=20.0, ppfd=300.0, vpd=1000.0, co2=400.0,
+        sp=101325.0, fapar=0.9, psi_soil=-0.5, rdark_leaf=0.015,
+    )
+    direct = pmodel_hydraulics_numerical(**kwargs)
+    jitted = jax.jit(lambda: pmodel_hydraulics_numerical(**kwargs))()
+
+    for key in ("jmax", "dpsi", "gs", "aj", "ci", "chi", "vcmax", "profit"):
+        assert jnp.allclose(direct[key], jitted[key], rtol=1e-10, atol=1e-12), \
+            f"{key}: direct={float(direct[key]):.10g} vs jit={float(jitted[key]):.10g}"
+
+
 def test_solver_monotonic_vpd():
     """Higher VPD should reduce stomatal conductance (gs) — basic ecophysiology."""
     vpds = [500.0, 1000.0, 2000.0, 3000.0]

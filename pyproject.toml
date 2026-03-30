@@ -11,8 +11,8 @@ license = "MIT"
 dependencies = [
   "jax>=0.4.20",
   "jaxlib>=0.4.20",
+  "jaxopt>=0.8.5",
   "numpy>=1.24",
-  "optax>=0.2.8",
 ]
 
 [project.optional-dependencies]
