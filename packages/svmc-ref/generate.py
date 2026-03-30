@@ -104,22 +104,40 @@ def generate_integration_forcing() -> None:
     def fortran_array_decl(name: str, n: int) -> str:
         return f"  real(8) :: {name}({n})"
 
+    def fortran_data_lines(name: str, values: list[str]) -> list[str]:
+        """Split Fortran DATA statements so free-form line length stays valid."""
+        lines: list[str] = []
+        line_limit = 132
+        start = 0
+        while start < len(values):
+            end = start
+            best_end = start
+            while end < len(values):
+                candidate_vals = ", ".join(values[start : end + 1])
+                candidate = f"  data {name}({start+1}:{end+1}) / {candidate_vals} /"
+                if len(candidate) > line_limit:
+                    break
+                best_end = end + 1
+                end += 1
+
+            if best_end == start:
+                print(f"ERROR: could not fit DATA statement for {name}({start+1}) within {line_limit} chars")
+                sys.exit(1)
+
+            vals = ", ".join(values[start:best_end])
+            lines.append(f"  data {name}({start+1}:{best_end}) / {vals} /")
+            start = best_end
+        return lines
+
     def fortran_array_data(name: str, values: list) -> list[str]:
         """Generate Fortran DATA statements for a real(8) array."""
-        lines = []
-        chunk = 4
-        for i in range(0, len(values), chunk):
-            batch = values[i : i + chunk]
-            vals = ", ".join(f"{v:.15e}" for v in batch)
-            lines.append(f"  data {name}({i+1}:{i+len(batch)}) / {vals} /")
-        return lines
+        return fortran_data_lines(name, [f"{v:.15e}" for v in values])
 
     def fortran_int_array_decl(name: str, n: int) -> str:
         return f"  integer :: {name}({n})"
 
     def fortran_int_array_data(name: str, values: list) -> list[str]:
-        vals = ", ".join(str(int(v)) for v in values)
-        return [f"  data {name} / {vals} /"]
+        return fortran_data_lines(name, [str(int(v)) for v in values])
 
     decl: list[str] = []
     data: list[str] = []
