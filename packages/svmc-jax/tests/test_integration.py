@@ -209,6 +209,46 @@ def test_integration_35day_replay():
             err_msg=f"{day_label} cstate mismatch",
         )
 
+    # ── Summary-level derived metrics (PLAN.md Lesson 3) ──
+    # Cumulative sums catch drift that per-day checks miss.
+    ref_gpp_sum = sum(f["output"]["gpp_avg"] for f in fixture)
+    ref_nee_sum = sum(f["output"]["nee"] for f in fixture)
+    ref_final_soc = fixture[-1]["output"]["soc_total"]
+    ref_final_wliq = fixture[-1]["output"]["wliq"]
+
+    actual_gpp_sum = float(jnp.sum(daily_outputs.gpp_avg))
+    actual_nee_sum = float(jnp.sum(daily_outputs.nee))
+    actual_final_soc = float(daily_outputs.soc_total[-1])
+    actual_final_wliq = float(daily_outputs.wliq[-1])
+
+    np.testing.assert_allclose(
+        actual_gpp_sum, ref_gpp_sum, rtol=RTOL,
+        err_msg="35-day cumulative GPP mismatch",
+    )
+    assert abs(actual_nee_sum - ref_nee_sum) < NEE_ATOL * _NDAYS, (
+        f"35-day cumulative NEE: expected {ref_nee_sum:.4e}, "
+        f"got {actual_nee_sum:.4e}"
+    )
+    np.testing.assert_allclose(
+        actual_final_soc, ref_final_soc, rtol=RTOL,
+        err_msg="Final SOC mismatch",
+    )
+    np.testing.assert_allclose(
+        actual_final_wliq, ref_final_wliq, rtol=RTOL,
+        err_msg="Final soil moisture mismatch",
+    )
+
+    # ── Harvest event validation (day 34 = manage_type 1) ──
+    # The fixture includes a harvest at day 34 (0-indexed 33).
+    # Verify the integration reproduced its impact on carbon pools.
+    harvest_day = 33  # 0-indexed
+    ref_harvest_cleaf = fixture[harvest_day]["output"]["cleaf"]
+    actual_harvest_cleaf = float(daily_outputs.cleaf[harvest_day])
+    np.testing.assert_allclose(
+        actual_harvest_cleaf, ref_harvest_cleaf, rtol=RTOL,
+        err_msg="Harvest day cleaf mismatch",
+    )
+
 
 def test_integration_1day_differentiable_through_phydro():
     """A one-day integration slice should remain differentiable."""
@@ -296,3 +336,104 @@ def test_integration_1day_differentiable_through_phydro():
 
     g = jax.grad(loss)(jnp.array(defaults["alpha"]))
     assert jnp.isfinite(g), f"Gradient through one-day integration is not finite: {g}"
+
+
+@pytest.mark.parametrize("tc_offset,vpd_scale,label", [
+    (45.0, 1.0, "hot"),      # tc ≈ 45 °C
+    (-40.0, 1.0, "cold"),    # tc ≈ -40 °C
+    (0.0, 5.0, "high_vpd"),  # VPD × 5 (very dry)
+])
+def test_integration_1day_ood_gradients(tc_offset, vpd_scale, label):
+    """OOD gradients through the integration loop should remain finite.
+
+    DoD criterion 5: verify ``jax.grad`` produces finite, stable
+    gradients under adversarial forcing conditions that L-BFGS-B
+    inversion could encounter.
+    """
+    ref = _load_qvidja_ref()
+    defaults = ref["defaults"]
+    hourly = ref["hourly"]
+    daily = ref["daily"]
+
+    # Build OOD forcing: shift temperature or scale VPD.
+    hourly_temp = jnp.array(hourly["temp_hr"][:24]).reshape(1, 24) + tc_offset
+    hourly_rg = jnp.array(hourly["rg_hr"][:24]).reshape(1, 24)
+    hourly_prec = jnp.array(hourly["prec_hr"][:24]).reshape(1, 24)
+    hourly_vpd = jnp.array(hourly["vpd_hr"][:24]).reshape(1, 24) * vpd_scale
+    hourly_pres = jnp.array(hourly["pres_hr"][:24]).reshape(1, 24)
+    hourly_co2 = jnp.array(hourly["co2_hr"][:24]).reshape(1, 24)
+    hourly_wind = jnp.array(hourly["wind_hr"][:24]).reshape(1, 24)
+
+    daily_lai = jnp.array(daily["lai_day"][:1])
+    daily_manage_type = jnp.array([float(x) for x in daily["manage_type"][:1]])
+    daily_manage_c_in = jnp.array(daily["manage_c_in"][:1])
+    daily_manage_c_out = jnp.array(daily["manage_c_out"][:1])
+
+    def loss(alpha_cost):
+        _final_carry, daily_outputs = run_integration(
+            hourly_temp=hourly_temp,
+            hourly_rg=hourly_rg,
+            hourly_prec=hourly_prec,
+            hourly_vpd=hourly_vpd,
+            hourly_pres=hourly_pres,
+            hourly_co2=hourly_co2,
+            hourly_wind=hourly_wind,
+            daily_lai=daily_lai,
+            daily_manage_type=daily_manage_type,
+            daily_manage_c_in=daily_manage_c_in,
+            daily_manage_c_out=daily_manage_c_out,
+            conductivity=defaults["conductivity"],
+            psi50=defaults["psi50"],
+            b_param=defaults["b"],
+            alpha_cost=alpha_cost,
+            gamma_cost=defaults["gamma"],
+            rdark=defaults["rdark"],
+            soil_depth=defaults["soil_depth"],
+            max_poros=defaults["max_poros"],
+            fc=defaults["fc"],
+            wp=defaults["wp"],
+            ksat=defaults["ksat"],
+            n_van=1.14,
+            watres=0.0,
+            alpha_van=5.92,
+            watsat=defaults["max_poros"],
+            maxpond=0.0,
+            wmax=0.5,
+            wmaxsnow=4.5,
+            kmelt=2.8934e-5,
+            kfreeze=5.79e-6,
+            frac_snowliq=0.05,
+            gsoil=5.0e-3,
+            hc=0.6,
+            w_leaf=0.01,
+            rw=0.20,
+            rwmin=0.02,
+            zmeas=2.0,
+            zground=0.1,
+            zo_ground=0.01,
+            cratio_resp=defaults["cratio_resp"],
+            cratio_leaf=defaults["cratio_leaf"],
+            cratio_root=defaults["cratio_root"],
+            cratio_biomass=defaults["cratio_biomass"],
+            harvest_index=defaults["harvest_index"],
+            turnover_cleaf=defaults["turnover_cleaf"],
+            turnover_croot=defaults["turnover_croot"],
+            sla=defaults["sla"],
+            q10=defaults["q10"],
+            invert_option=defaults["invert_option"],
+            pft_is_oat=0.0,
+            yasso_param=_YASSO_PARAM,
+            yasso_totc=defaults["yasso_totc"],
+            yasso_cn_input=defaults["yasso_cn_input"],
+            yasso_fract_root=defaults["yasso_fract_root"],
+            yasso_fract_legacy=0.0,
+            yasso_tempr_c=5.4,
+            yasso_precip_day=1.87,
+            yasso_tempr_ampl=20.0,
+        )
+        return daily_outputs.gpp_avg[0]
+
+    g = jax.grad(loss)(jnp.array(defaults["alpha"]))
+    assert jnp.isfinite(g), (
+        f"OOD gradient ({label}) is not finite: {g}"
+    )
