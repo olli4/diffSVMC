@@ -319,7 +319,7 @@ export function allocHypothesis2Fn(
     abovebiomass: np.where(isGrowth, gAbove, dAbove),
     belowbiomass: np.where(isGrowth, gBelow, dBelow),
     yield: np.array(0.0),    // never modified
-    grainFill: grainFill.add(0.0),
+    grainFill: grainFill.ref,
     phenoStage: np.where(isGrowth, 1, 1),  // both paths reset to 1
   };
 }

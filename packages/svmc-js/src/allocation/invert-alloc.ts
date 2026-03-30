@@ -186,7 +186,7 @@ export function invertAllocFn(
 
   // ===== INACTIVE (pheno_stage != 1): pass through =====
   return {
-    deltaLai: deltaLai.add(0.0),
+    deltaLai: deltaLai.ref,
     litterCleaf: np.where(isActive, outLitterCleaf, litterCleafIn),
     cleaf: np.where(isActive, outCleaf, cleaf),
     cratioLeaf: np.where(isActive, outCratioLeaf, cratioLeaf),
