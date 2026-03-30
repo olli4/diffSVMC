@@ -1909,7 +1909,7 @@ PROGRAM harness
 
     ! --- P-Hydro ---
     int_psi_soil = int_sw_state%Psi
-    if (int_lai > 1.0d-6) then
+    if (int_lai > 1.0d-6 .and. int_rg > 0.0d0) then
       call pmodel_hydraulics_numerical( &
           int_temp - 273.15d0, int_rg * 2.1d0 / int_lai, int_vpd, &
           int_co2 * 1.0d6, int_pres, int_fapar, &
