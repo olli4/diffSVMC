@@ -66,6 +66,7 @@ class HourlyCarry(NamedTuple):
     vcmax_acc: jax.Array             # accumulated Vcmax (µmol/m²/s)
     num_gpp: jax.Array               # count of valid GPP hours
     num_vcmax: jax.Array             # count of valid Vcmax hours
+    et_acc: jax.Array                # accumulated ET (mm)
 
 
 class DailyCarry(NamedTuple):
@@ -128,6 +129,7 @@ class DailyOutput(NamedTuple):
     wliq: jax.Array
     psi: jax.Array
     cstate: jax.Array          # (5,) AWENH pools
+    et_total: jax.Array        # daily accumulated ET (mm)
 
 
 # ── Initialization ────────────────────────────────────────────────────
@@ -269,7 +271,7 @@ def _make_hourly_step(
 
         # Update ET with P-Hydro transpiration
         tr_spafhy = tr_phydro * (_TIME_STEP * 3600.0)
-        et = tr_spafhy + cw_flux.SoilEvap + cw_flux.CanopyEvap
+        et_hr = tr_spafhy + cw_flux.SoilEvap + cw_flux.CanopyEvap
 
         # ── Soil water ──
         latflow = jnp.array(0.0)
@@ -314,6 +316,7 @@ def _make_hourly_step(
             vcmax_acc=carry.vcmax_acc + vcmax_to_add,
             num_gpp=new_num_gpp,
             num_vcmax=new_num_vcmax,
+            et_acc=carry.et_acc + et_hr,
         )
         return new_carry, None
 
@@ -386,6 +389,7 @@ def _make_daily_step(
             vcmax_acc=jnp.array(0.0),
             num_gpp=jnp.array(0.0),
             num_vcmax=jnp.array(0.0),
+            et_acc=jnp.array(0.0),
         )
 
         # Run 24 hourly steps
@@ -513,6 +517,7 @@ def _make_daily_step(
             wliq=final_hourly.sw_state.Wliq,
             psi=final_hourly.sw_state.Psi,
             cstate=new_cstate,
+            et_total=final_hourly.et_acc,
         )
 
         return new_carry, output

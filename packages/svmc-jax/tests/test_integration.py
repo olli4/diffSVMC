@@ -25,12 +25,13 @@ _QVIDJA_REF = _HERE / "../../../website/public/qvidja-v1-reference.json"
 
 # Integration fixture tolerance.
 #
-# The JAX BFGS optimizer and the Fortran L-BFGS-B optimizer find the same
-# economic optimum to within the documented per-call tolerance of rtol=3e-3
-# (see test_phydro.py::rtol_solver).  Over a 35-day integration with ~20
-# light-hour optimizer calls per day, the per-day GPP error stays below
-# 1e-2 (max observed: 9e-3).  Water-balance fields (wliq, psi) are
-# insensitive to the optimizer and match to ~1e-3.
+# The JAX L-BFGS-B optimizer (jaxopt.LBFGSB) and the Fortran L-BFGS-B
+# optimizer find the same economic optimum to within the documented
+# per-call tolerance of rtol=3e-3 (see test_phydro.py::rtol_solver).
+# Over a 35-day integration with ~20 light-hour optimizer calls per day,
+# the per-day GPP error stays below 1e-2 (max observed: 9e-3).
+# Water-balance fields (wliq, psi) are insensitive to the optimizer
+# and match to ~1e-3.
 #
 # For NEE (= respiration − GPP), the two large terms nearly cancel,
 # making the relative error of their difference much larger than either
@@ -250,89 +251,86 @@ def test_integration_35day_replay():
     )
 
 
+def _run_1day(defaults, hourly, daily, **overrides):
+    """Run a 1-day integration with Qvidja defaults, returning outputs.
+
+    Keyword overrides are applied to the hourly forcing arrays *after*
+    the default slice-and-reshape (e.g. ``hourly_temp=custom_array``).
+    """
+    kw = dict(
+        hourly_temp=jnp.array(hourly["temp_hr"][:24]).reshape(1, 24),
+        hourly_rg=jnp.array(hourly["rg_hr"][:24]).reshape(1, 24),
+        hourly_prec=jnp.array(hourly["prec_hr"][:24]).reshape(1, 24),
+        hourly_vpd=jnp.array(hourly["vpd_hr"][:24]).reshape(1, 24),
+        hourly_pres=jnp.array(hourly["pres_hr"][:24]).reshape(1, 24),
+        hourly_co2=jnp.array(hourly["co2_hr"][:24]).reshape(1, 24),
+        hourly_wind=jnp.array(hourly["wind_hr"][:24]).reshape(1, 24),
+        daily_lai=jnp.array(daily["lai_day"][:1]),
+        daily_manage_type=jnp.array([float(x) for x in daily["manage_type"][:1]]),
+        daily_manage_c_in=jnp.array(daily["manage_c_in"][:1]),
+        daily_manage_c_out=jnp.array(daily["manage_c_out"][:1]),
+        conductivity=defaults["conductivity"],
+        psi50=defaults["psi50"],
+        b_param=defaults["b"],
+        alpha_cost=defaults["alpha"],
+        gamma_cost=defaults["gamma"],
+        rdark=defaults["rdark"],
+        soil_depth=defaults["soil_depth"],
+        max_poros=defaults["max_poros"],
+        fc=defaults["fc"],
+        wp=defaults["wp"],
+        ksat=defaults["ksat"],
+        n_van=1.14,
+        watres=0.0,
+        alpha_van=5.92,
+        watsat=defaults["max_poros"],
+        maxpond=0.0,
+        wmax=0.5,
+        wmaxsnow=4.5,
+        kmelt=2.8934e-5,
+        kfreeze=5.79e-6,
+        frac_snowliq=0.05,
+        gsoil=5.0e-3,
+        hc=0.6,
+        w_leaf=0.01,
+        rw=0.20,
+        rwmin=0.02,
+        zmeas=2.0,
+        zground=0.1,
+        zo_ground=0.01,
+        cratio_resp=defaults["cratio_resp"],
+        cratio_leaf=defaults["cratio_leaf"],
+        cratio_root=defaults["cratio_root"],
+        cratio_biomass=defaults["cratio_biomass"],
+        harvest_index=defaults["harvest_index"],
+        turnover_cleaf=defaults["turnover_cleaf"],
+        turnover_croot=defaults["turnover_croot"],
+        sla=defaults["sla"],
+        q10=defaults["q10"],
+        invert_option=defaults["invert_option"],
+        pft_is_oat=0.0,
+        yasso_param=_YASSO_PARAM,
+        yasso_totc=defaults["yasso_totc"],
+        yasso_cn_input=defaults["yasso_cn_input"],
+        yasso_fract_root=defaults["yasso_fract_root"],
+        yasso_fract_legacy=0.0,
+        yasso_tempr_c=5.4,
+        yasso_precip_day=1.87,
+        yasso_tempr_ampl=20.0,
+    )
+    kw.update(overrides)
+    return run_integration(**kw)
+
+
 def test_integration_1day_differentiable_through_phydro():
     """A one-day integration slice should remain differentiable."""
     ref = _load_qvidja_ref()
     defaults = ref["defaults"]
-    hourly = ref["hourly"]
-    daily = ref["daily"]
-
-    hourly_temp = jnp.array(hourly["temp_hr"][:24]).reshape(1, 24)
-    hourly_rg = jnp.array(hourly["rg_hr"][:24]).reshape(1, 24)
-    hourly_prec = jnp.array(hourly["prec_hr"][:24]).reshape(1, 24)
-    hourly_vpd = jnp.array(hourly["vpd_hr"][:24]).reshape(1, 24)
-    hourly_pres = jnp.array(hourly["pres_hr"][:24]).reshape(1, 24)
-    hourly_co2 = jnp.array(hourly["co2_hr"][:24]).reshape(1, 24)
-    hourly_wind = jnp.array(hourly["wind_hr"][:24]).reshape(1, 24)
-
-    daily_lai = jnp.array(daily["lai_day"][:1])
-    daily_manage_type = jnp.array([float(x) for x in daily["manage_type"][:1]])
-    daily_manage_c_in = jnp.array(daily["manage_c_in"][:1])
-    daily_manage_c_out = jnp.array(daily["manage_c_out"][:1])
 
     def loss(alpha_cost):
-        _final_carry, daily_outputs = run_integration(
-            hourly_temp=hourly_temp,
-            hourly_rg=hourly_rg,
-            hourly_prec=hourly_prec,
-            hourly_vpd=hourly_vpd,
-            hourly_pres=hourly_pres,
-            hourly_co2=hourly_co2,
-            hourly_wind=hourly_wind,
-            daily_lai=daily_lai,
-            daily_manage_type=daily_manage_type,
-            daily_manage_c_in=daily_manage_c_in,
-            daily_manage_c_out=daily_manage_c_out,
-            conductivity=defaults["conductivity"],
-            psi50=defaults["psi50"],
-            b_param=defaults["b"],
-            alpha_cost=alpha_cost,
-            gamma_cost=defaults["gamma"],
-            rdark=defaults["rdark"],
-            soil_depth=defaults["soil_depth"],
-            max_poros=defaults["max_poros"],
-            fc=defaults["fc"],
-            wp=defaults["wp"],
-            ksat=defaults["ksat"],
-            n_van=1.14,
-            watres=0.0,
-            alpha_van=5.92,
-            watsat=defaults["max_poros"],
-            maxpond=0.0,
-            wmax=0.5,
-            wmaxsnow=4.5,
-            kmelt=2.8934e-5,
-            kfreeze=5.79e-6,
-            frac_snowliq=0.05,
-            gsoil=5.0e-3,
-            hc=0.6,
-            w_leaf=0.01,
-            rw=0.20,
-            rwmin=0.02,
-            zmeas=2.0,
-            zground=0.1,
-            zo_ground=0.01,
-            cratio_resp=defaults["cratio_resp"],
-            cratio_leaf=defaults["cratio_leaf"],
-            cratio_root=defaults["cratio_root"],
-            cratio_biomass=defaults["cratio_biomass"],
-            harvest_index=defaults["harvest_index"],
-            turnover_cleaf=defaults["turnover_cleaf"],
-            turnover_croot=defaults["turnover_croot"],
-            sla=defaults["sla"],
-            q10=defaults["q10"],
-            invert_option=defaults["invert_option"],
-            pft_is_oat=0.0,
-            yasso_param=_YASSO_PARAM,
-            yasso_totc=defaults["yasso_totc"],
-            yasso_cn_input=defaults["yasso_cn_input"],
-            yasso_fract_root=defaults["yasso_fract_root"],
-            yasso_fract_legacy=0.0,
-            yasso_tempr_c=5.4,
-            yasso_precip_day=1.87,
-            yasso_tempr_ampl=20.0,
-        )
-        return daily_outputs.gpp_avg[0]
+        _fc, out = _run_1day(defaults, ref["hourly"], ref["daily"],
+                             alpha_cost=alpha_cost)
+        return out.gpp_avg[0]
 
     g = jax.grad(loss)(jnp.array(defaults["alpha"]))
     assert jnp.isfinite(g), f"Gradient through one-day integration is not finite: {g}"
@@ -357,83 +355,57 @@ def test_integration_1day_ood_gradients(tc_offset, vpd_scale, label):
 
     # Build OOD forcing: shift temperature or scale VPD.
     hourly_temp = jnp.array(hourly["temp_hr"][:24]).reshape(1, 24) + tc_offset
-    hourly_rg = jnp.array(hourly["rg_hr"][:24]).reshape(1, 24)
-    hourly_prec = jnp.array(hourly["prec_hr"][:24]).reshape(1, 24)
     hourly_vpd = jnp.array(hourly["vpd_hr"][:24]).reshape(1, 24) * vpd_scale
-    hourly_pres = jnp.array(hourly["pres_hr"][:24]).reshape(1, 24)
-    hourly_co2 = jnp.array(hourly["co2_hr"][:24]).reshape(1, 24)
-    hourly_wind = jnp.array(hourly["wind_hr"][:24]).reshape(1, 24)
-
-    daily_lai = jnp.array(daily["lai_day"][:1])
-    daily_manage_type = jnp.array([float(x) for x in daily["manage_type"][:1]])
-    daily_manage_c_in = jnp.array(daily["manage_c_in"][:1])
-    daily_manage_c_out = jnp.array(daily["manage_c_out"][:1])
 
     def loss(alpha_cost):
-        _final_carry, daily_outputs = run_integration(
-            hourly_temp=hourly_temp,
-            hourly_rg=hourly_rg,
-            hourly_prec=hourly_prec,
-            hourly_vpd=hourly_vpd,
-            hourly_pres=hourly_pres,
-            hourly_co2=hourly_co2,
-            hourly_wind=hourly_wind,
-            daily_lai=daily_lai,
-            daily_manage_type=daily_manage_type,
-            daily_manage_c_in=daily_manage_c_in,
-            daily_manage_c_out=daily_manage_c_out,
-            conductivity=defaults["conductivity"],
-            psi50=defaults["psi50"],
-            b_param=defaults["b"],
-            alpha_cost=alpha_cost,
-            gamma_cost=defaults["gamma"],
-            rdark=defaults["rdark"],
-            soil_depth=defaults["soil_depth"],
-            max_poros=defaults["max_poros"],
-            fc=defaults["fc"],
-            wp=defaults["wp"],
-            ksat=defaults["ksat"],
-            n_van=1.14,
-            watres=0.0,
-            alpha_van=5.92,
-            watsat=defaults["max_poros"],
-            maxpond=0.0,
-            wmax=0.5,
-            wmaxsnow=4.5,
-            kmelt=2.8934e-5,
-            kfreeze=5.79e-6,
-            frac_snowliq=0.05,
-            gsoil=5.0e-3,
-            hc=0.6,
-            w_leaf=0.01,
-            rw=0.20,
-            rwmin=0.02,
-            zmeas=2.0,
-            zground=0.1,
-            zo_ground=0.01,
-            cratio_resp=defaults["cratio_resp"],
-            cratio_leaf=defaults["cratio_leaf"],
-            cratio_root=defaults["cratio_root"],
-            cratio_biomass=defaults["cratio_biomass"],
-            harvest_index=defaults["harvest_index"],
-            turnover_cleaf=defaults["turnover_cleaf"],
-            turnover_croot=defaults["turnover_croot"],
-            sla=defaults["sla"],
-            q10=defaults["q10"],
-            invert_option=defaults["invert_option"],
-            pft_is_oat=0.0,
-            yasso_param=_YASSO_PARAM,
-            yasso_totc=defaults["yasso_totc"],
-            yasso_cn_input=defaults["yasso_cn_input"],
-            yasso_fract_root=defaults["yasso_fract_root"],
-            yasso_fract_legacy=0.0,
-            yasso_tempr_c=5.4,
-            yasso_precip_day=1.87,
-            yasso_tempr_ampl=20.0,
-        )
-        return daily_outputs.gpp_avg[0]
+        _fc, out = _run_1day(defaults, hourly, daily,
+                             hourly_temp=hourly_temp,
+                             hourly_vpd=hourly_vpd,
+                             alpha_cost=alpha_cost)
+        return out.gpp_avg[0]
 
     g = jax.grad(loss)(jnp.array(defaults["alpha"]))
     assert jnp.isfinite(g), (
         f"OOD gradient ({label}) is not finite: {g}"
     )
+
+
+def test_integration_1day_jit_consistent():
+    """JIT-compiled integration must produce the same outputs as eager.
+
+    Guards against a future change breaking the compiled execution path
+    that calibration/inversion workloads will rely on.
+    """
+    ref = _load_qvidja_ref()
+    defaults = ref["defaults"]
+
+    _fc_eager, out_eager = _run_1day(defaults, ref["hourly"], ref["daily"])
+
+    @jax.jit
+    def run_jitted(alpha):
+        return _run_1day(defaults, ref["hourly"], ref["daily"],
+                         alpha_cost=alpha)
+
+    _fc_jit, out_jit = run_jitted(jnp.array(defaults["alpha"]))
+
+    np.testing.assert_allclose(
+        float(out_jit.gpp_avg[0]), float(out_eager.gpp_avg[0]),
+        rtol=1e-10,
+        err_msg="JIT vs eager GPP mismatch",
+    )
+    np.testing.assert_allclose(
+        float(out_jit.et_total[0]), float(out_eager.et_total[0]),
+        rtol=1e-10,
+        err_msg="JIT vs eager ET mismatch",
+    )
+
+
+def test_integration_1day_et_nonnegative():
+    """Daily ET must be non-negative (physical invariant)."""
+    ref = _load_qvidja_ref()
+    defaults = ref["defaults"]
+
+    _fc, out = _run_1day(defaults, ref["hourly"], ref["daily"])
+    et = float(out.et_total[0])
+    assert jnp.isfinite(out.et_total[0]), f"ET is not finite: {et}"
+    assert et >= 0.0, f"ET is negative: {et}"
