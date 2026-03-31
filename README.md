@@ -6,6 +6,79 @@ The goal is a numerically faithful, fully differentiable reimplementation suitab
 
 🤖 AI generated code & documentation with gentle human supervision.
 
+## What is SVMC?
+
+SVMC (Soil-Vegetation Model Coupled) is a process-based
+soil-plant-atmosphere model developed at the Finnish Meteorological
+Institute (FMI) and Natural Resources Institute Finland (Luke). In the
+[reference paper](https://doi.org/10.5194/egusphere-2025-5972) (Tang et
+al. 2025) the model is called SPY-C
+(SpaFHy-Phydro-Yasso for Carbon calculation). It simulates how crops
+grow, use water, and exchange carbon with the atmosphere over time.
+The model was developed to study how the water-transport properties of
+plants ("hydraulic traits") affect crop productivity and drought
+resistance, using continuous CO₂ and water flux measurements from
+Finnish crop fields (perennial forage grass at Qvidja, oat at Hauho).
+
+The model couples four interlinked modules:
+
+- **P-Hydro** (Joshi et al. 2022) — the photosynthesis and water
+  transport module. Every hour, the model assumes that the plant adjusts
+  two things to maximize net benefit: how much photosynthetic capacity to
+  maintain ($J_\text{max}$, the maximum rate of electron transport in the
+  leaf) and how hard to pull water from the soil ($\Delta\psi$, the
+  soil-to-leaf water potential difference). The trade-off is captured by
+  a profit function
+  $F = A_j - \alpha\, J_\text{max} - \gamma\, \Delta\psi^2$: the plant
+  gains carbon through light-limited photosynthesis ($A_j$) but pays a
+  cost to maintain photosynthetic machinery ($\alpha$) and to keep its
+  water-transport pathway intact ($\gamma$; pulling harder risks
+  cavitation — air bubbles in the xylem that block water flow). Solving
+  this optimization determines stomatal conductance (how open the leaf
+  pores are), carbon assimilation (GPP), and transpiration (water loss).
+- **SpaFHy** (Launiainen et al. 2019) — the water balance module.
+  Tracks rainfall interception by the canopy, snow accumulation and melt,
+  and a single-layer soil water store. It converts the soil's volumetric
+  water content to a water potential $\psi_s$ using the van Genuchten
+  retention curve (an empirical relationship between how wet the soil is
+  and how tightly it holds water) and passes $\psi_s$ to P-Hydro. In
+  return, P-Hydro supplies the transpiration flux that depletes the soil
+  water store, creating a tight hourly feedback loop between water supply
+  and plant demand.
+- **Carbon allocation** — the phenology and allocation module (PA).
+  Each day, the carbon fixed by photosynthesis (GPP) is allocated to
+  leaf and root pools, with an additional grain-filling term for cereal
+  crops as described in the paper. In this repo's implementation, the
+  allocation wrapper also exposes a stem carbon pool used in the model's
+  aboveground biomass bookkeeping. The plant pools lose carbon through
+  autotrophic respiration (the plant's own maintenance and growth costs)
+  and turnover, producing litter that falls to the soil.
+- **YASSO20** (Viskari et al. 2022) — the soil carbon decomposition
+  module. Receives daily litter from the allocation module and
+  maps it into four chemical input fractions: Acid-soluble,
+  Water-soluble, Ethanol-soluble, and Non-soluble (collectively
+  "AWEN"). A fifth, slow Humus pool is part of the YASSO20 state, but it
+  does not receive external litter input directly; it gains carbon via
+  transfers within the decomposition system. Microbial breakdown of
+  these pools releases CO₂ as heterotrophic respiration (HR). YASSO20
+  uses a matrix-exponential solver to update pool sizes, running at daily
+  and optional annual time scales.
+
+The model is driven by hourly meteorological forcing (radiation,
+temperature, precipitation, humidity, wind, pressure), satellite-derived
+LAI (leaf area index — total leaf surface per unit ground area), and
+management events (harvest, fertilization, grazing). Key outputs
+include:
+
+- **GPP** — gross primary productivity (total carbon fixed by
+  photosynthesis)
+- **NEE** — net ecosystem exchange (ecosystem respiration minus GPP;
+  positive = net CO₂ source)
+- **ET** — evapotranspiration (total water leaving the soil-plant system)
+- **Soil moisture** and soil water potential
+- **Carbon pool trajectories** — daily time series of leaf, stem,
+  root, grain, and soil organic carbon stocks
+
 ## Repository structure
 
 ```
@@ -21,6 +94,54 @@ vendor/
 scripts/       CI tooling (branch coverage audit, Fortran vs JAX comparison)
 issues/        Upstream bug reports for SVMC
 ```
+
+## Model overview
+
+The model couples four modules across hourly, daily, and optional yearly
+update loops. P-Hydro and SpaFHy are tightly coupled at the hourly scale:
+SpaFHy converts soil moisture to soil water potential and passes it to
+P-Hydro, which returns transpiration back to the water balance.
+
+```mermaid
+flowchart TD
+  Forcing["Hourly forcing\nradiation, temperature, precip,\nhumidity, wind, pressure"]
+  LAI["Satellite LAI\n(Sentinel-2, daily interpolated)"]
+  Mgmt["Management events\n(harvest, fertilizer, grazing)"]
+
+  subgraph Hourly["Hourly loop"]
+    PH["P-Hydro\nmaximize profit F = Aj − α·Jmax − γ·Δψ²\n→ GPP, stomatal conductance, transpiration"]
+    Canopy["SpaFHy canopy\ninterception, snow,\ncanopy & ground evaporation"]
+    Soil["SpaFHy soil\nwater balance → θ → ψs\n(van Genuchten)"]
+  end
+
+  subgraph Daily["Daily loop"]
+    Alloc["Carbon allocation (PA)\npaper: leaf / root / grain flows\nrepo also exposes stem state"]
+    YDaily["Yasso20 daily\nlitter → decomposition → HR"]
+    NEE["NEE = (AR + HR) − GPP"]
+  end
+
+  subgraph Yearly["Optional yearly loop"]
+    YAnnual["Yasso20 annual\nmod5c20 spin-up"]
+  end
+
+  Forcing --> PH
+  Forcing --> Canopy
+  LAI --> PH
+  Mgmt --> Alloc
+  PH -- "transpiration" --> Soil
+  Soil -- "ψs" --> PH
+  PH --> Canopy
+  Canopy --> Soil
+  PH -- "hourly GPP" --> Alloc
+  Soil -- "soil moisture" --> Alloc
+  Alloc -- "litter" --> YDaily
+  Alloc -- "AR" --> NEE
+  YDaily -- "HR" --> NEE
+  PH -- "GPP" --> NEE
+  YDaily --> YAnnual
+```
+
+For the leaf-level call graph and porting order, see [DEPENDENCY-TREE.md](DEPENDENCY-TREE.md).
 
 ## Porting approach
 
@@ -41,7 +162,7 @@ Upstream SVMC calls P-Hydro on every hour regardless of radiation.  The harness 
 
 ### P-Hydro optimizer: selectable projected solvers (JAX)
 
-Upstream Fortran uses L-BFGS-B with finite-difference gradients (`setulb`). The default JAX solver now uses a fixed-budget projected limited-memory BFGS method with static secant memory, vectorized trial step sizes, and a short projected-Newton polish on the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`). It evaluates a fixed multistart set (`[4.0, 1.0]`, `[1.0, 0.05]`, `[-10.0, 1e-4]`) to recover the low-light and lower-bound basins that the simpler projected-Newton path could miss.
+Upstream Fortran uses L-BFGS-B (a standard algorithm for optimization with box constraints; Morales and Nocedal 2011) with finite-difference gradients (`setulb`) to maximize the P-Hydro profit function $F = A_j - \alpha\, J_\text{max} - \gamma\, \Delta\psi^2$ over the two decision variables $J_\text{max}$ (maximum electron transport capacity) and $\Delta\psi$ (soil-to-leaf water potential difference). In plain terms, at every sunlit hour the model finds the combination of photosynthetic capacity and water uptake effort that gives the plant the best net return on carbon gain versus water-transport cost. The default JAX solver now uses a fixed-budget projected limited-memory BFGS method with static secant memory, vectorized trial step sizes, and a short projected-Newton polish on the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`). It evaluates a fixed multistart set (`[4.0, 1.0]`, `[1.0, 0.05]`, `[-10.0, 1e-4]`) to recover the low-light and lower-bound basins that the simpler projected-Newton path could miss.
 
 The earlier adaptive-LM projected-Newton solver is still preserved as a selectable alternative because optimizer behavior remains an active research topic in SVMC development. The public selectors are:
 

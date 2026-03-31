@@ -22,6 +22,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import jax
+jax.config.update("jax_enable_x64", True)
+
 from svmc_jax.qvidja_replay import build_qvidja_run_kwargs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -107,8 +110,6 @@ def run_fortran(ndays: int) -> list[dict]:
 
 def run_jax(ref: dict, ndays: int) -> list[dict]:
     """Run the JAX integration model for *ndays* days."""
-    import jax
-    jax.config.update("jax_enable_x64", True)
     from svmc_jax.integration import run_integration
 
     print(f"[JAX] Running integration for {ndays} days …")
