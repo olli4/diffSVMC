@@ -72,10 +72,12 @@ footer a { color: var(--accent); }
 
 <h1>SVMC — Qvidja Site Full Model</h1>
 <p class="subtitle">
-  Full SVMC integration: P-hydro photosynthesis, SpaFHy water balance, YASSO20 soil C,
-  and carbon allocation — all running as Fortran/WebAssembly in the browser via WebR.
-  This demo replays the vendored Qvidja reference inputs used for the maintained
-  SVMC v1.0.0 test case rather than synthetic forcing.
+  diffSVMC's primary products are the differentiable SVMC ports in JAX and
+  <code>@hamk-uas/jax-js-nonconsuming</code>. This page is the complementary
+  WebR/Fortran reference demo: the full SVMC integration (P-hydro photosynthesis,
+  SpaFHy water balance, YASSO20 soil C, and carbon allocation) running in the
+  browser against the vendored Qvidja reference inputs used for the maintained
+  SVMC v1.0.0 test case.
   <a href="comparison.html">View Fortran vs JAX comparison &rarr;</a>
 </p>
 <div style="font-size:.8rem;margin-bottom:.5rem">
@@ -200,8 +202,9 @@ footer a { color: var(--accent); }
 
 <footer>
   <a href="https://github.com/olli4/diffSVMC">diffSVMC</a> —
-  Full SVMC Fortran model compiled to WebAssembly via
-  <a href="https://docs.r-wasm.org/webr/latest/">WebR</a>.
+  differentiable SVMC ports in JAX and
+  <code>@hamk-uas/jax-js-nonconsuming</code>, plus this
+  <a href="https://docs.r-wasm.org/webr/latest/">WebR</a>/Fortran reference demo.
   Replays the vendored Qvidja reference inputs for the maintained SVMC v1.0.0 test case
   (2018-05-10 to 2022-12-31).
 </footer>
