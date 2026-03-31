@@ -433,3 +433,180 @@ def test_solver_outputs_consistent():
     aj_recomputed = gs0 * (ca - float(r["ci"]))
     assert jnp.allclose(jnp.float64(aj_recomputed), r["aj"], rtol=1e-8), \
         f"aj consistency: {aj_recomputed} vs {float(r['aj'])}"
+
+
+# ── Solver comparison test set ──────────────────────────────────────────
+#
+# Compare projected-Newton against scipy L-BFGS-B on random plausible
+# environments, plus gradient checks.  Catches off-fixture solver failures
+# and custom_vjp inconsistencies.
+
+import numpy as np
+from scipy.optimize import minimize as scipy_minimize
+
+from svmc_jax.phydro.solver import (
+    _objective,
+    _LOG_JMAX_LO,
+    _LOG_JMAX_HI,
+    _DPSI_LO,
+    _DPSI_HI,
+)
+
+
+def _build_params(tc, ppfd, vpd, co2=400.0, sp=101325.0, fapar=0.9,
+                  psi_soil=-0.5, rdark_leaf=0.015, alpha=0.1,
+                  gamma_cost=0.5, conductivity=4e-16, psi50=-3.46,
+                  b_param=2.0, kphio=KPHIO):
+    """Build parameter structs from scalar inputs for objective evaluation."""
+    from svmc_jax.phydro.leaf_functions import (
+        scale_conductivity, ParPhotosynth, ParPlant, ParCost, ParEnv,
+    )
+    tc_ = jnp.float64(tc)
+    sp_ = jnp.float64(sp)
+    vpd_ = jnp.float64(vpd)
+    ppfd_ = jnp.float64(ppfd)
+    co2_ = jnp.float64(co2)
+    par_plant = ParPlant(
+        conductivity=jnp.float64(conductivity),
+        psi50=jnp.float64(psi50),
+        b=jnp.float64(b_param),
+    )
+    par_cost = ParCost(alpha=jnp.float64(alpha), gamma=jnp.float64(gamma_cost))
+    kmm = calc_kmm(tc_, sp_)
+    gs_val = gammastar(tc_, sp_)
+    phi0 = jnp.float64(kphio) * ftemp_kphio(tc_, c4=False)
+    Iabs = ppfd_ * jnp.float64(fapar)
+    ca = co2_ * sp_ * 1e-6
+    par_photosynth = ParPhotosynth(
+        kmm=kmm, gammastar=gs_val, phi0=phi0,
+        Iabs=Iabs, ca=ca, patm=sp_, delta=jnp.float64(rdark_leaf),
+    )
+    par_env = ParEnv(
+        viscosity_water=viscosity_h2o(tc_, sp_),
+        density_water=density_h2o(tc_, sp_),
+        patm=sp_, tc=tc_, vpd=vpd_,
+    )
+    return jnp.float64(psi_soil), par_cost, par_photosynth, par_plant, par_env
+
+
+def _scipy_reference(psi_soil, par_cost, par_photosynth, par_plant, par_env):
+    """Solve with scipy L-BFGS-B as ground-truth reference."""
+    def obj_np(x):
+        val = _objective(
+            jnp.array(x), psi_soil, par_cost, par_photosynth,
+            par_plant, par_env,
+        )
+        return float(val)
+
+    bounds = [(_LOG_JMAX_LO, _LOG_JMAX_HI), (_DPSI_LO, _DPSI_HI)]
+    res = scipy_minimize(obj_np, [4.0, 1.0], method="L-BFGS-B", bounds=bounds)
+    return res.x, res.fun
+
+
+# 50 random plausible environments with fixed seed for reproducibility
+_RNG = np.random.default_rng(42)
+_N_RANDOM = 50
+_RANDOM_CASES = [
+    {
+        "tc": float(_RNG.uniform(0, 35)),
+        "ppfd": float(_RNG.uniform(50, 2000)),
+        "vpd": float(_RNG.uniform(100, 4000)),
+        "psi_soil": float(_RNG.uniform(-3.0, -0.1)),
+        "alpha": float(_RNG.uniform(0.05, 0.3)),
+    }
+    for _ in range(_N_RANDOM)
+]
+
+
+@pytest.mark.parametrize(
+    "case", _RANDOM_CASES,
+    ids=lambda c: f"tc={c['tc']:.1f}_ppfd={c['ppfd']:.0f}_vpd={c['vpd']:.0f}_psi={c['psi_soil']:.2f}",
+)
+def test_solver_vs_scipy(case):
+    """Newton solver must reach objective within 0.5 of scipy L-BFGS-B."""
+    params = _build_params(**case)
+    # Newton solution
+    newton_result = pmodel_hydraulics_numerical(
+        tc=case["tc"], ppfd=case["ppfd"], vpd=case["vpd"],
+        co2=400.0, sp=101325.0, fapar=0.9,
+        psi_soil=case["psi_soil"], rdark_leaf=0.015,
+        alpha=case["alpha"],
+    )
+    newton_x = jnp.array([jnp.log(newton_result["jmax"]),
+                           newton_result["dpsi"]])
+    newton_obj = float(_objective(newton_x, *params))
+    # Scipy reference
+    _, scipy_obj = _scipy_reference(*params)
+    gap = newton_obj - scipy_obj  # positive = Newton is worse
+    assert gap < 0.5, (
+        f"Newton obj={newton_obj:.4f} vs scipy obj={scipy_obj:.4f}, "
+        f"gap={gap:.4f} exceeds 0.5"
+    )
+
+
+# Specific regression case: previously stalled at initial guess
+def test_solver_regression_stall_case():
+    """Regression: the case that stalled with fixed-regularisation Newton."""
+    r = pmodel_hydraulics_numerical(
+        tc=4.5446371446088065, ppfd=1344.5858935751426,
+        vpd=2319.557259496112, co2=400.0, sp=101325.0,
+        fapar=0.9, psi_soil=-0.3208819059598719, rdark_leaf=0.015,
+    )
+    # Must not return initial guess (log_jmax=4.0, dpsi=1.0)
+    log_jmax = float(jnp.log(r["jmax"]))
+    dpsi = float(r["dpsi"])
+    assert abs(log_jmax - 4.0) > 0.1 or abs(dpsi - 1.0) > 0.1, \
+        f"Solver stalled at initial guess: log_jmax={log_jmax}, dpsi={dpsi}"
+    assert float(r["profit"]) > 5.0, \
+        f"Profit too low ({float(r['profit']):.2f}), solver likely stalled"
+
+
+# Gradient checks: AD vs finite differences
+_GRAD_CASES = [
+    # Benign interior case
+    {"tc": 20.0, "ppfd": 300.0, "vpd": 1000.0, "psi_soil": -0.5,
+    "alpha": 0.1, "label": "benign"},
+    # Former stall case
+    {"tc": 4.54, "ppfd": 1344.6, "vpd": 2319.6, "psi_soil": -0.321,
+    "alpha": 0.1, "label": "former_stall"},
+    # Dry + high VPD (bound-active region)
+    {"tc": 30.0, "ppfd": 800.0, "vpd": 3500.0, "psi_soil": -2.5,
+    "alpha": 0.1, "label": "dry_high_vpd"},
+    # Cold + low light
+    {"tc": 2.0, "ppfd": 80.0, "vpd": 200.0, "psi_soil": -0.3,
+    "alpha": 0.1, "label": "cold_low_light"},
+    # Exact lower-bound optimum for dpsi: constrained VJP must zero it out.
+    {"tc": 20.0, "ppfd": 300.0, "vpd": 1000.0, "psi_soil": -0.5,
+    "alpha": 5.0, "label": "very_costly_bound"},
+]
+
+
+@pytest.mark.parametrize("case", _GRAD_CASES, ids=lambda c: c["label"])
+def test_solver_gradient_vs_finite_diff(case):
+    """AD gradient through full solver must agree with finite differences."""
+    def loss(alpha):
+        return pmodel_hydraulics_numerical(
+            tc=case["tc"], ppfd=case["ppfd"], vpd=case["vpd"],
+            co2=400.0, sp=101325.0, fapar=0.9,
+            psi_soil=case["psi_soil"], rdark_leaf=0.015,
+            alpha=alpha,
+        )["aj"]
+
+    alpha0 = case["alpha"]
+    g_ad = float(jax.grad(loss)(alpha0))
+
+    # Central finite differences at eps=1e-4
+    eps = 1e-4
+    g_fd = float((loss(alpha0 + eps) - loss(alpha0 - eps)) / (2 * eps))
+
+    # Check agreement (allow 1% relative or 0.1 absolute for near-zero grads)
+    if abs(g_fd) > 0.1:
+        rel = abs(g_ad - g_fd) / abs(g_fd)
+        assert rel < 0.01, (
+            f"[{case['label']}] AD={g_ad:.6e} vs FD={g_fd:.6e}, rel={rel:.3e}"
+        )
+    else:
+        assert abs(g_ad - g_fd) < 0.1, (
+            f"[{case['label']}] AD={g_ad:.6e} vs FD={g_fd:.6e}, "
+            f"abs diff={abs(g_ad - g_fd):.3e}"
+        )

@@ -39,11 +39,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 
 Upstream SVMC calls P-Hydro on every hour regardless of radiation.  The harness adds `int_rg > 0.0d0` (and the JAX integration mirrors it as `rg > 0.0`) to skip the optimizer when there is no light.  Without this guard the quadratic solver's analytically-zero `aj` picks up ±1e-17 floating-point noise whose sign is compilation-context-dependent, corrupting the `num_gpp` averaging denominator nondeterministically.  Integration fixtures are regenerated with this guard, so fixture values differ from a raw upstream run on zero-PPFD hours.
 
-### P-Hydro optimizer: JAXopt L-BFGS-B with implicit differentiation (JAX)
+### P-Hydro optimizer: projected Newton with LM damping (JAX)
 
-Upstream Fortran uses L-BFGS-B with finite-difference gradients (`setulb`).  The JAX solver now uses `jaxopt.LBFGSB` with the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`) but exact autodiff gradients.  JAXopt's implicit differentiation computes gradients of the optimal solution from the KKT conditions at the converged point instead of unrolling every optimizer step, so the composed JAX model remains end-to-end differentiable through the optimizer.
+Upstream Fortran uses L-BFGS-B with finite-difference gradients (`setulb`). The JAX solver now uses a fixed-iteration projected Newton method with adaptive Levenberg-Marquardt damping on the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`). This avoids the GPU-unfriendly `while_loop` control flow in `jaxopt.LBFGSB`, so the optimizer can be fused into a single `lax.fori_loop` kernel and batched efficiently with `vmap`.
 
-The TypeScript solver still uses Optax Adam (512 steps, lr = 0.05) from Phase 2 and has not yet been updated to match the JAX `LBFGSB` path.  Both converge to the same economic optimum within documented tolerances, but the algorithms differ.
+The backward pass still uses implicit differentiation through the converged optimum rather than unrolling every optimizer step, so the composed JAX model remains differentiable for outer calibration loops. The TypeScript solver still uses Optax Adam (512 steps, lr = 0.05) from Phase 2 and has not yet been updated to match the JAX projected-Newton path.
 
 ### TypeScript `matrixExp` bounded squaring
 
@@ -162,6 +162,29 @@ N100 mini-PC:
 |---|---|---|
 | Native R/Fortran | 1.6 s | 1× |
 | WebR/WASM (Chromium) | 5.4 s | ~3.4× |
+
+JAX P-Hydro benchmark for a 365-day Qvidja replay on the current code:
+
+| Platform | Workload | Compile | Runtime | Notes |
+|---|---|---|---|---|
+| CPU (Intel N100) | 1 field | 1.4 s | 267.7 ms | Best scalar latency |
+| GPU (RTX 4070 Ti SUPER) | 1 field | 10.1 s | 7.63 s | GPU is still launch-bound for a single field |
+| GPU (RTX 4070 Ti SUPER) | `vmap` batch of 256 fields | 9.9 s | 7.55 s | 258.9× vs sequential GPU baseline |
+| CPU (Intel N100) | `vmap` batch of 256 fields | 12.7 s | 11.40 s | 6.0× vs sequential CPU baseline |
+
+The batch benchmark models a calibration-style workload where the same
+forcing is replayed for many parameter hypotheses in parallel. On GPU,
+wall time is nearly constant from batch size 1 to 256, giving 29.5 ms per
+field at `N=256` versus 7.63 s for a single field. On CPU, the same
+batched kernel is much less attractive for small `N`; the 267.7 ms scalar
+JIT path remains the right default for single-field runs.
+
+These measurements were taken with:
+
+```bash
+python tmp/bench_vmap_gpu.py
+JAX_PLATFORMS=cpu python tmp/bench_vmap_gpu.py
+```
 
 The first `pnpm build` uses Docker to compile the R package to WASM via
 the `ghcr.io/r-wasm/webr:main` image. Subsequent builds skip this step
