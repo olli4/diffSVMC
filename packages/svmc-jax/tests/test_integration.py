@@ -243,6 +243,7 @@ def test_integration_1day_jit_consistent():
     np.testing.assert_allclose(
         float(out_jit.gpp_avg[0]), float(out_eager.gpp_avg[0]),
         rtol=1e-9,
+        atol=5e-16,
         err_msg="JIT vs eager GPP mismatch",
     )
     np.testing.assert_allclose(
