@@ -39,11 +39,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 
 Upstream SVMC calls P-Hydro on every hour regardless of radiation.  The harness adds `int_rg > 0.0d0` (and the JAX integration mirrors it as `rg > 0.0`) to skip the optimizer when there is no light.  Without this guard the quadratic solver's analytically-zero `aj` picks up ±1e-17 floating-point noise whose sign is compilation-context-dependent, corrupting the `num_gpp` averaging denominator nondeterministically.  Integration fixtures are regenerated with this guard, so fixture values differ from a raw upstream run on zero-PPFD hours.
 
-### P-Hydro optimizer: projected Newton with LM damping (JAX)
+### P-Hydro optimizer: selectable projected solvers (JAX)
 
-Upstream Fortran uses L-BFGS-B with finite-difference gradients (`setulb`). The JAX solver now uses a fixed-iteration projected Newton method with adaptive Levenberg-Marquardt damping on the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`). This avoids the GPU-unfriendly `while_loop` control flow in `jaxopt.LBFGSB`, so the optimizer can be fused into a single `lax.fori_loop` kernel and batched efficiently with `vmap`.
+Upstream Fortran uses L-BFGS-B with finite-difference gradients (`setulb`). The default JAX solver now uses a fixed-budget projected limited-memory BFGS method with static secant memory, vectorized trial step sizes, and a short projected-Newton polish on the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`). It evaluates a fixed multistart set (`[4.0, 1.0]`, `[1.0, 0.05]`, `[-10.0, 1e-4]`) to recover the low-light and lower-bound basins that the simpler projected-Newton path could miss.
 
-The backward pass still uses implicit differentiation through the converged optimum rather than unrolling every optimizer step, so the composed JAX model remains differentiable for outer calibration loops. The TypeScript solver still uses Optax Adam (512 steps, lr = 0.05) from Phase 2 and has not yet been updated to match the JAX projected-Newton path.
+The earlier adaptive-LM projected-Newton solver is still preserved as a selectable alternative because optimizer behavior remains an active research topic in SVMC development. The public selectors are:
+
+- `pmodel_hydraulics_numerical(..., solver_kind="projected_lbfgs")` for the current default
+- `pmodel_hydraulics_numerical(..., solver_kind="projected_newton")` for the earlier projected-Newton path
+- `run_integration(..., phydro_optimizer="projected_lbfgs")` for the default full-model integration path
+- `run_integration(..., phydro_optimizer="projected_newton")` to replay the full model with the projected-Newton alternative
+
+The backward pass still uses implicit differentiation through the converged optimum rather than unrolling every optimizer step, so the composed JAX model remains differentiable for outer calibration loops. The TypeScript solver still uses Optax Adam (512 steps, lr = 0.05) from Phase 2 and has not yet been updated to match either JAX projected solver.
+
+Hybrid strategies may well be viable, but they are not the focus at this stage. The repository keeps the two concrete solver options above rather than adding a third hybrid path prematurely.
 
 ### TypeScript `matrixExp` bounded squaring
 
@@ -163,21 +172,27 @@ N100 mini-PC:
 | Native R/Fortran | 1.6 s | 1× |
 | WebR/WASM (Chromium) | 5.4 s | ~3.4× |
 
-JAX P-Hydro benchmark for a 365-day Qvidja replay on the current code:
+JAX P-Hydro benchmark for a 365-day Qvidja replay on the current default (`projected_lbfgs`) code path:
 
 | Platform | Workload | Compile | Runtime | Notes |
 |---|---|---|---|---|
-| CPU (Intel N100) | 1 field | 1.4 s | 267.7 ms | Best scalar latency |
-| GPU (RTX 4070 Ti SUPER) | 1 field | 10.1 s | 7.63 s | GPU is still launch-bound for a single field |
-| GPU (RTX 4070 Ti SUPER) | `vmap` batch of 256 fields | 9.9 s | 7.55 s | 258.9× vs sequential GPU baseline |
-| CPU (Intel N100) | `vmap` batch of 256 fields | 12.7 s | 11.40 s | 6.0× vs sequential CPU baseline |
+| CPU (Intel N100) | 1 field | 2.2 s | 625.8 ms | Best scalar latency on CPU |
+| GPU (RTX 4070 Ti SUPER) | 1 field | 19.1 s | 15.45 s | Accuracy-oriented solver is still launch-bound for a single field |
+| GPU (RTX 4070 Ti SUPER) | `vmap` batch of 256 fields | 20.4 s | 17.01 s | 15 fields/s, 231.7× vs sequential GPU baseline |
+| CPU (Intel N100) | `vmap` batch of 256 fields | 74.6 s | 72.72 s | 4 fields/s, 2.2× vs sequential CPU baseline |
 
 The batch benchmark models a calibration-style workload where the same
 forcing is replayed for many parameter hypotheses in parallel. On GPU,
-wall time is nearly constant from batch size 1 to 256, giving 29.5 ms per
-field at `N=256` versus 7.63 s for a single field. On CPU, the same
-batched kernel is much less attractive for small `N`; the 267.7 ms scalar
+wall time is still nearly constant from batch size 1 to 256, giving 66.4 ms
+per field at `N=256` versus 15.45 s for a single field. On CPU, the same
+batched kernel is far less attractive for small `N`; the 625.8 ms scalar
 JIT path remains the right default for single-field runs.
+
+The preserved `projected_newton` alternative is still materially faster on the
+same GPU: 7.70 s for one field and 7.56 s at `N=256` (34 fields/s). The
+default `projected_lbfgs` solver keeps the replay and regression tests green,
+but it trades a substantial amount of throughput for better low-light basin
+recovery and integration accuracy.
 
 These measurements were taken with:
 

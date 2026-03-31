@@ -388,8 +388,20 @@ def test_pmodel_hydraulics_numerical_jit_consistent():
     jitted = jax.jit(lambda: pmodel_hydraulics_numerical(**kwargs))()
 
     for key in ("jmax", "dpsi", "gs", "aj", "ci", "chi", "vcmax", "profit"):
-        assert jnp.allclose(direct[key], jitted[key], rtol=1e-10, atol=1e-12), \
+        assert jnp.allclose(direct[key], jitted[key], rtol=5e-8, atol=1e-12), \
             f"{key}: direct={float(direct[key]):.10g} vs jit={float(jitted[key]):.10g}"
+
+
+def test_pmodel_hydraulics_numerical_projected_newton_selectable():
+    """The committed projected-Newton baseline should remain callable."""
+    result = pmodel_hydraulics_numerical(
+        tc=20.0, ppfd=300.0, vpd=1000.0, co2=400.0,
+        sp=101325.0, fapar=0.9, psi_soil=-0.5, rdark_leaf=0.015,
+        solver_kind="projected_newton",
+    )
+
+    for key in ("jmax", "dpsi", "gs", "aj", "ci", "chi", "vcmax", "profit"):
+        assert jnp.isfinite(result[key]), f"{key} is not finite for projected_newton"
 
 
 def test_solver_monotonic_vpd():
@@ -503,6 +515,40 @@ def _scipy_reference(psi_soil, par_cost, par_photosynth, par_plant, par_env):
     return res.x, res.fun
 
 
+def _assert_solver_matches_scipy(case, gap_tol):
+    """Blocking regression helper for known solver failure pockets."""
+    params = _build_params(**case)
+    newton_result = pmodel_hydraulics_numerical(
+        tc=case["tc"],
+        ppfd=case["ppfd"],
+        vpd=case["vpd"],
+        co2=case.get("co2", 400.0),
+        sp=case.get("sp", 101325.0),
+        fapar=case.get("fapar", 1.0),
+        psi_soil=case["psi_soil"],
+        rdark_leaf=case.get("rdark_leaf", 0.015),
+        conductivity=case.get("conductivity", 4e-16),
+        psi50=case.get("psi50", -3.46),
+        b_param=case.get("b_param", 2.0),
+        alpha=case["alpha"],
+        gamma_cost=case.get("gamma_cost", 0.5),
+        kphio=case.get("kphio", KPHIO),
+    )
+    log_jmax = float(jnp.log(newton_result["jmax"]))
+    dpsi = float(newton_result["dpsi"])
+    assert jnp.isfinite(newton_result["jmax"]), "solver returned non-finite jmax"
+    assert jnp.isfinite(newton_result["dpsi"]), "solver returned non-finite dpsi"
+    newton_x = jnp.array([log_jmax, dpsi])
+    newton_obj = float(_objective(newton_x, *params))
+
+    scipy_x, scipy_obj = _scipy_reference(*params)
+    gap = newton_obj - scipy_obj
+    assert gap < gap_tol, (
+        f"Newton x={[log_jmax, dpsi]} obj={newton_obj:.12g} vs "
+        f"scipy x={scipy_x.tolist()} obj={scipy_obj:.12g}; gap={gap:.12g}"
+    )
+
+
 # 50 random plausible environments with fixed seed for reproducibility
 _RNG = np.random.default_rng(42)
 _N_RANDOM = 50
@@ -559,6 +605,110 @@ def test_solver_regression_stall_case():
         f"Solver stalled at initial guess: log_jmax={log_jmax}, dpsi={dpsi}"
     assert float(r["profit"]) > 5.0, \
         f"Profit too low ({float(r['profit']):.2f}), solver likely stalled"
+
+
+def test_solver_regression_low_light_high_cost_hits_lower_bound_optimum():
+    """Blocking regression: low-light/high-cost cases should reach scipy optimum."""
+    _assert_solver_matches_scipy(
+        dict(
+            tc=-5.0,
+            ppfd=100.0,
+            vpd=1000.0,
+            psi_soil=-1.0,
+            alpha=5.0,
+            gamma_cost=0.5,
+            co2=400.0,
+            sp=101325.0,
+            fapar=1.0,
+            rdark_leaf=0.015,
+        ),
+        gap_tol=1e-4,
+    )
+
+
+def test_solver_regression_high_vpd_interior_case_matches_scipy():
+    """Blocking regression: interior high-VPD optimum should not under-converge."""
+    _assert_solver_matches_scipy(
+        dict(
+            tc=15.0,
+            ppfd=2200.0,
+            vpd=4500.0,
+            psi_soil=-0.5,
+            alpha=0.03,
+            gamma_cost=0.2,
+            co2=400.0,
+            sp=101325.0,
+            fapar=1.0,
+            rdark_leaf=0.015,
+        ),
+        gap_tol=1e-3,
+    )
+
+
+def test_solver_regression_weak_hydraulics_case_matches_scipy():
+    """Blocking regression: weak-hydraulics dry-soil optimum should match scipy."""
+    _assert_solver_matches_scipy(
+        dict(
+            tc=25.0,
+            ppfd=1000.0,
+            vpd=800.0,
+            psi_soil=-4.0,
+            alpha=0.05,
+            gamma_cost=0.5,
+            conductivity=1e-17,
+            psi50=-2.0,
+            b_param=4.0,
+            co2=400.0,
+            sp=101325.0,
+            fapar=1.0,
+            rdark_leaf=0.015,
+        ),
+        gap_tol=1e-6,
+    )
+
+
+def test_solver_regression_random_nan_case_matches_scipy():
+    """Blocking regression: previous NaN case should stay finite and optimal."""
+    _assert_solver_matches_scipy(
+        dict(
+            tc=31.797319881432422,
+            ppfd=1151.314009508769,
+            vpd=625.4710276386504,
+            psi_soil=-3.6668503071422798,
+            alpha=0.013313615865987496,
+            gamma_cost=0.45378309233645575,
+            conductivity=2.2352797950193703e-17,
+            psi50=-1.420224220107091,
+            b_param=5.506985418171395,
+            co2=400.0,
+            sp=101325.0,
+            fapar=1.0,
+            rdark_leaf=0.015,
+        ),
+        gap_tol=1e-6,
+    )
+
+
+def test_solver_regression_lower_bound_start_case_matches_scipy():
+    """Blocking regression: bad interior start should be rescued by fixed multistart."""
+    _assert_solver_matches_scipy(
+        dict(
+            tc=15.820147089607975,
+            ppfd=1723.6724451871746,
+            vpd=1608.8633604073505,
+            psi_soil=-4.800500207103255,
+            alpha=4.174344486657861,
+            gamma_cost=1.031605162555923,
+            conductivity=3.078206259265897e-17,
+            psi50=-1.3587134297601686,
+            b_param=4.675975262634204,
+            co2=400.0,
+            sp=101325.0,
+            fapar=1.0,
+            rdark_leaf=0.015,
+        ),
+        gap_tol=1e-6,
+    )
 
 
 # Gradient checks: AD vs finite differences

@@ -195,6 +195,7 @@ def _make_hourly_step(
     b_param: float,
     alpha: float,
     gamma_cost: float,
+    phydro_optimizer: str,
 ):
     """Return a scan-compatible hourly step function closed over static params."""
 
@@ -230,6 +231,7 @@ def _make_hourly_step(
             b_param=b_param,
             alpha=alpha,
             gamma_cost=gamma_cost,
+            solver_kind=phydro_optimizer,
         )
 
         aj = phydro_result["aj"]
@@ -337,6 +339,7 @@ def _make_daily_step(
     b_param: float,
     alpha: float,
     gamma_cost: float,
+    phydro_optimizer: str,
     # Allocation parameters (fixed)
     cratio_resp: float,
     cratio_leaf: float,
@@ -368,6 +371,7 @@ def _make_daily_step(
             rdark=rdark, conductivity=conductivity,
             psi50=psi50, b_param=b_param,
             alpha=alpha, gamma_cost=gamma_cost,
+            phydro_optimizer=phydro_optimizer,
         )
 
         # Stack hourly forcing: shape (24, 7)
@@ -594,6 +598,7 @@ def run_integration(
     yasso_tempr_c: float,
     yasso_precip_day: float,
     yasso_tempr_ampl: float,
+    phydro_optimizer: str = "projected_lbfgs",
 ) -> tuple[DailyCarry, DailyOutput]:
     """Run the full SVMC integration loop.
 
@@ -692,6 +697,7 @@ def run_integration(
         b_param=b_param,
         alpha=alpha_cost,
         gamma_cost=gamma_cost,
+        phydro_optimizer=phydro_optimizer,
         cratio_resp=cratio_resp,
         cratio_leaf=cratio_leaf,
         cratio_root=cratio_root,

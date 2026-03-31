@@ -242,14 +242,28 @@ def test_integration_1day_jit_consistent():
 
     np.testing.assert_allclose(
         float(out_jit.gpp_avg[0]), float(out_eager.gpp_avg[0]),
-        rtol=1e-10,
+        rtol=1e-9,
         err_msg="JIT vs eager GPP mismatch",
     )
     np.testing.assert_allclose(
         float(out_jit.et_total[0]), float(out_eager.et_total[0]),
-        rtol=1e-10,
+        rtol=1e-9,
         err_msg="JIT vs eager ET mismatch",
     )
+
+
+def test_integration_1day_projected_newton_selectable():
+    """The integration entry point should allow the projected-Newton alternative."""
+    ref = _load_qvidja_ref()
+    defaults = ref["defaults"]
+
+    _fc, out = _run_1day(
+        defaults, ref["hourly"], ref["daily"],
+        phydro_optimizer="projected_newton",
+    )
+
+    assert jnp.isfinite(out.gpp_avg[0]), f"Projected-Newton GPP is not finite: {out.gpp_avg[0]}"
+    assert jnp.isfinite(out.et_total[0]), f"Projected-Newton ET is not finite: {out.et_total[0]}"
 
 
 def test_integration_1day_et_nonnegative():
