@@ -312,4 +312,38 @@ describe("P-Hydro solver — Fortran reference", () => {
     result.profit.dispose();
     result.chiJmaxLim.dispose();
   });
+
+  it("projected_newton remains selectable", async () => {
+    const result = pmodelHydraulicsNumerical(
+      20.0,
+      300.0,
+      1000.0,
+      400.0,
+      101325.0,
+      0.9,
+      -0.5,
+      0.015,
+      4e-16,
+      -3.46,
+      2.0,
+      0.1,
+      0.5,
+      0.087182,
+      "projected_newton",
+    );
+
+    for (const key of ["jmax", "dpsi", "gs", "aj", "ci", "chi", "vcmax", "profit"] as const) {
+      expect(Number.isFinite((result[key] as np.Array).item() as number)).toBe(true);
+    }
+
+    result.jmax.dispose();
+    result.dpsi.dispose();
+    result.gs.dispose();
+    result.aj.dispose();
+    result.ci.dispose();
+    result.chi.dispose();
+    result.vcmax.dispose();
+    result.profit.dispose();
+    result.chiJmaxLim.dispose();
+  });
 });

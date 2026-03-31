@@ -156,11 +156,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the `PORT-BRANCH` convention.
 
 ## Current deviations from upstream SVMC
 
-### Zero-radiation P-Hydro guard (harness + JAX)
+### Zero-radiation P-Hydro guard (harness + JAX + TS)
 
-Upstream SVMC calls P-Hydro on every hour regardless of radiation.  The harness adds `int_rg > 0.0d0` (and the JAX integration mirrors it as `rg > 0.0`) to skip the optimizer when there is no light.  Without this guard the quadratic solver's analytically-zero `aj` picks up ±1e-17 floating-point noise whose sign is compilation-context-dependent, corrupting the `num_gpp` averaging denominator nondeterministically.  Integration fixtures are regenerated with this guard, so fixture values differ from a raw upstream run on zero-PPFD hours.
+Upstream SVMC calls P-Hydro on every hour regardless of radiation.  The harness adds `int_rg > 0.0d0` (and the JAX and TypeScript integration ports mirror it as `rg > 0.0`) to skip the optimizer when there is no light.  Without this guard the quadratic solver's analytically-zero `aj` picks up ±1e-17 floating-point noise whose sign is compilation-context-dependent, corrupting the `num_gpp` averaging denominator nondeterministically.  Integration fixtures are regenerated with this guard, so fixture values differ from a raw upstream run on zero-PPFD hours.
 
-### P-Hydro optimizer: selectable projected solvers (JAX)
+### P-Hydro optimizer: selectable projected solvers (JAX + TS)
 
 Upstream Fortran uses L-BFGS-B (a standard algorithm for optimization with box constraints; Morales and Nocedal 2011) with finite-difference gradients (`setulb`) to maximize the P-Hydro profit function $F = A_j - \alpha\, J_\text{max} - \gamma\, \Delta\psi^2$ over the two decision variables $J_\text{max}$ (maximum electron transport capacity) and $\Delta\psi$ (soil-to-leaf water potential difference). In plain terms, at every sunlit hour the model finds the combination of photosynthetic capacity and water uptake effort that gives the plant the best net return on carbon gain versus water-transport cost. The default JAX solver now uses a fixed-budget projected limited-memory BFGS method with static secant memory, vectorized trial step sizes, and a short projected-Newton polish on the same box-constrained problem (`log_jmax ∈ [-10, 10]`, `dpsi ∈ [1e-4, 1e6]`). It evaluates a fixed multistart set (`[4.0, 1.0]`, `[1.0, 0.05]`, `[-10.0, 1e-4]`) to recover the low-light and lower-bound basins that the simpler projected-Newton path could miss.
 
@@ -171,7 +171,7 @@ The earlier adaptive-LM projected-Newton solver is still preserved as a selectab
 - `run_integration(..., phydro_optimizer="projected_lbfgs")` for the default full-model integration path
 - `run_integration(..., phydro_optimizer="projected_newton")` to replay the full model with the projected-Newton alternative
 
-The backward pass still uses implicit differentiation through the converged optimum rather than unrolling every optimizer step, so the composed JAX model remains differentiable for outer calibration loops. The TypeScript solver still uses Optax Adam (512 steps, lr = 0.05) from Phase 2 and has not yet been updated to match either JAX projected solver.
+The backward pass still uses implicit differentiation through the converged optimum rather than unrolling every optimizer step, so the composed JAX model remains differentiable for outer calibration loops. The TypeScript port now mirrors the same two projected solver choices, including `projected_lbfgs` as the default and `projected_newton` as the selectable alternative, and the full `svmc-js` integration replay continues to pass against the same 35-day Qvidja fixture used by JAX.
 
 Hybrid strategies may well be viable, but they are not the focus at this stage. The repository keeps the two concrete solver options above rather than adding a third hybrid path prematurely.
 
@@ -192,8 +192,10 @@ Both the JAX and TypeScript `mod5c20` transient solvers split the `exp(At)·z₁
 | 2 | P-Hydro assemblies & optimizer | ✅ Complete |
 | 3 | SpaFHy canopy & soil water balance | ✅ Complete |
 | 4 | Carbon allocation & Yasso20 | ✅ Complete |
-| 5 | Main SVMC integration loop | In progress (JAX integration complete) |
+| 5 | Main SVMC integration loop | ✅ Complete (JAX + TS 35-day Qvidja replay) |
 | 6 | Interactive web application | In progress (demo live) |
+
+The current TypeScript Phase 5 path is validated by a 35-day Qvidja replay test in `packages/svmc-js/test/integration.test.ts`. It mirrors the JAX control flow and fixture contract, runs with `checkLeaks`, and currently uses an eager replay loop rather than a `lax.scan` composition because that is the most stable `jax-js-nonconsuming` execution path for this slice today.
 
 ## Quick start
 

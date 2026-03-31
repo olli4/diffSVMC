@@ -5,6 +5,7 @@
  * See DEPENDENCY-TREE.md for the full dependency graph.
  */
 export * from "./precision.js";
+export * from "./integration.js";
 export * from "./allocation/index.js";
 export * from "./phydro/index.js";
 export * from "./water/index.js";

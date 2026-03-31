@@ -14,6 +14,7 @@ authoritative harness sources, not in the staged copies.
 """
 
 import json
+import os
 import subprocess
 import sys
 from collections import defaultdict
@@ -225,7 +226,7 @@ def build_harness() -> None:
     print("Build OK")
 
 
-def run_harness() -> list[dict]:
+def run_harness(env_overrides: dict[str, str] | None = None) -> list[dict]:
     """Execute the harness and parse its JSONL file output."""
     print("Running harness …")
     # Get netcdf include flags
@@ -238,11 +239,15 @@ def run_harness() -> list[dict]:
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     fpm_flags = f"-O2 -g -m64 -freal-4-real-8 -fcheck=all {nf_flags}".strip()
+    run_env = os.environ.copy()
+    if env_overrides:
+        run_env.update(env_overrides)
     result = subprocess.run(
         ["fpm", "run", "--flag", fpm_flags],
         cwd=HERE,
         capture_output=True,
         text=True,
+        env=run_env,
     )
     if result.returncode != 0:
         print("=== STDERR ===", result.stderr, sep="\n")
@@ -317,6 +322,10 @@ INTEGRATION_FUNCTIONS = {
     "integration_daily",
 }
 
+AUXILIARY_FUNCTIONS = {
+    "integration_hourly",
+}
+
 
 def split_and_write(records: list[dict]) -> None:
     """Split records into phydro/water and write JSON fixture files."""
@@ -340,6 +349,8 @@ def split_and_write(records: list[dict]) -> None:
             alloc[fn].append({"inputs": rec["inputs"], "output": rec["output"]})
         elif fn in INTEGRATION_FUNCTIONS:
             integration[fn].append({"inputs": rec["inputs"], "output": rec["output"]})
+        elif fn in AUXILIARY_FUNCTIONS:
+            continue
         else:
             print(f"WARNING: unknown function '{fn}', skipping")
 

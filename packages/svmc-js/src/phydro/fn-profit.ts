@@ -50,20 +50,21 @@ export function fnProfit(
   using costDpsi = parCost.gamma.mul(_jaxTmp1);
   using costs = costJmax.add(costDpsi);
 
-  let profit: np.Array;
   if (hypothesis === "PM") {
-    profit = aj.sub(costs);
-  } else {
-    using ajSafe = aj.add(1e-4);
-    using negCosts = costs.mul(-1);
-    profit = negCosts.div(ajSafe);
+    using profit = aj.sub(costs);
+    if (doOptim) {
+      using negProfit = profit.mul(-1);
+      return negProfit.ref;
+    }
+    return profit.ref;
   }
 
+  using ajSafe = aj.add(1e-4);
+  using negCosts = costs.mul(-1);
+  using profit = negCosts.div(ajSafe);
   if (doOptim) {
-    const negProfit = profit.mul(-1);
-    profit.dispose();
-    return negProfit;
+    using negProfit = profit.mul(-1);
+    return negProfit.ref;
   }
-
-  return profit;
+  return profit.ref;
 }

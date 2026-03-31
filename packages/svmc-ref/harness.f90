@@ -211,6 +211,10 @@ PROGRAM harness
   real(8) :: int_temp_avg, int_gpp_avg, int_vcmax_avg
   real(8) :: int_leaf_rdark_day
   real(8) :: int_hetero_resp, int_total_resp, int_nee_day
+  logical :: int_log_hourly_enabled
+  integer :: int_log_day_start, int_log_day_end
+  type(canopywater_state_type) :: int_cw_state_in
+  type(soilwater_state_type) :: int_sw_state_in
 
   integer :: i, j, k, m
   integer :: nrec  ! record counter
@@ -221,6 +225,7 @@ PROGRAM harness
   ! --- Open JSONL output file on unit 10 ---
   open(unit=10, file='fixtures.jsonl', status='replace', action='write')
   nrec = 0
+  call init_integration_hourly_logging(int_log_hourly_enabled, int_log_day_start, int_log_day_end)
 
   ! --- Initialise grids ---
   tc_grid   = (/ -10.0d0, 0.0d0, 5.0d0, 10.0d0, 15.0d0, &
@@ -356,6 +361,8 @@ PROGRAM harness
     end do
   end do
 
+    int_cw_state_in = int_cw_state
+    int_sw_state_in = int_sw_state
   ! ================================================================
   ! 2. gammastar(tc, patm)
   ! ================================================================
@@ -1954,6 +1961,16 @@ PROGRAM harness
     int_met_daily(2) = int_prec + int_cw_flux%Melt / (time_step * 3600.0d0)
     call exponential_smooth_met(int_met_daily, int_met_rolling, int_met_ind)
 
+    if (int_log_hourly_enabled .and. int_day_idx >= int_log_day_start .and. &
+        int_day_idx <= int_log_day_end) then
+      call log_integration_hourly(10, int_day_idx, int_hr, mod(int_hr - 1, 24) + 1, &
+           int_temp - 273.15d0, int_rg, int_prec, int_vpd, int_pres, int_co2, int_wind, &
+           int_lai, int_fapar, int_psi_soil, int_aj, int_gs, int_vcmax_hr, int_tr_spafhy, &
+           int_met_rolling(1), int_met_rolling(2), int_cw_state_in, int_cw_flux, int_cw_state, &
+           int_sw_state_in, int_sw_flux, int_sw_state)
+      nrec = nrec + 1
+    end if
+
     ! --- Accumulate daily sums ---
     int_temp_acc   = int_temp_acc   + int_met_rolling(1)
     int_precip_acc = int_precip_acc + int_met_rolling(2) * time_step * 3600.0d0
@@ -2251,6 +2268,51 @@ CONTAINS
   ! Helper: write integration_daily JSONL record
   ! Logs daily-averaged state from the coupled integration loop.
   ! ================================================================
+  SUBROUTINE init_integration_hourly_logging(enabled, start_day, end_day)
+    logical, intent(out) :: enabled
+    integer, intent(out) :: start_day, end_day
+    character(len=64) :: env_value
+    integer :: status
+
+    enabled = .false.
+    start_day = 1
+    end_day = INT_NDAYS
+
+    call get_environment_variable('SVMC_REF_LOG_INTEGRATION_HOURLY', env_value, status=status)
+    if (status /= 0) return
+
+    env_value = adjustl(trim(env_value))
+    select case (env_value)
+    case ('1', 'true', 'TRUE', 'yes', 'YES', 'on', 'ON')
+      enabled = .true.
+    case default
+      enabled = .false.
+    end select
+
+    if (.not. enabled) return
+
+    call read_env_int('SVMC_REF_LOG_DAY_START', 1, start_day)
+    call read_env_int('SVMC_REF_LOG_DAY_END', INT_NDAYS, end_day)
+
+    start_day = max(1, min(start_day, INT_NDAYS))
+    end_day = max(start_day, min(end_day, INT_NDAYS))
+  END SUBROUTINE init_integration_hourly_logging
+
+  SUBROUTINE read_env_int(name, default_value, parsed_value)
+    character(len=*), intent(in) :: name
+    integer, intent(in) :: default_value
+    integer, intent(out) :: parsed_value
+    character(len=64) :: env_value
+    integer :: status, read_status
+
+    parsed_value = default_value
+    call get_environment_variable(name, env_value, status=status)
+    if (status /= 0) return
+
+    read(env_value, *, iostat=read_status) parsed_value
+    if (read_status /= 0) parsed_value = default_value
+  END SUBROUTINE read_env_int
+
   SUBROUTINE log_integration_daily(u, day, temp_avg, precip_acc, &
        gpp_avg, nee, hetero_resp, auto_resp, &
        cleaf, croot, cstem, cgrain, &
@@ -2288,6 +2350,63 @@ CONTAINS
       cstate(1), ',', cstate(2), ',', cstate(3), ',', cstate(4), ',', cstate(5)
     write(u, '(A)') ']}}'
   END SUBROUTINE log_integration_daily
+
+  SUBROUTINE log_integration_hourly(u, day, hour_index, hour_of_day, &
+       temp_c, rg, prec, vpd, pres, co2, wind, lai, fapar, psi_soil_in, &
+       aj, gs, vcmax_hr, tr_phydro_mm, met_temp_smooth, met_prec_smooth, &
+       cw_in, cw_flux, cw_out, sw_in, sw_flux, sw_out)
+    integer, intent(in) :: u, day, hour_index, hour_of_day
+    real(8), intent(in) :: temp_c, rg, prec, vpd, pres, co2, wind, lai, fapar
+    real(8), intent(in) :: psi_soil_in, aj, gs, vcmax_hr, tr_phydro_mm
+    real(8), intent(in) :: met_temp_smooth, met_prec_smooth
+    type(canopywater_state_type), intent(in) :: cw_in, cw_out
+    type(canopywater_flux_type), intent(in) :: cw_flux
+    type(soilwater_state_type), intent(in) :: sw_in, sw_out
+    type(soilwater_flux_type), intent(in) :: sw_flux
+
+    write(u, '(A)', advance='no') '{"fn":"integration_hourly","inputs":{'
+    write(u, '(A,I0,A,I0,A,I0)', advance='no') &
+      '"day":', day, ',"hour_index":', hour_index, ',"hour_of_day":', hour_of_day
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"temp_c":', temp_c, ',"rg":', rg, ',"prec":', prec
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"vpd":', vpd, ',"pres":', pres, ',"co2":', co2
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"wind":', wind, ',"lai":', lai, ',"fapar":', fapar
+    write(u, '(A)', advance='no') '},"output":{'
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      '"psi_soil_in":', psi_soil_in, ',"aj":', aj, ',"gs":', gs, ',"vcmax_hr":', vcmax_hr
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"tr_phydro_mm":', tr_phydro_mm, ',"met_temp_smooth":', met_temp_smooth, &
+      ',"met_prec_smooth":', met_prec_smooth
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"cw_in_canopy_storage":', cw_in%CanopyStorage, ',"cw_in_swe":', cw_in%SWE, &
+      ',"cw_in_swe_i":', cw_in%swe_i, ',"cw_in_swe_l":', cw_in%swe_l
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"cw_throughfall":', cw_flux%Throughfall, ',"cw_interception":', cw_flux%Interception, &
+      ',"cw_canopy_evap":', cw_flux%CanopyEvap, ',"cw_soil_evap":', cw_flux%SoilEvap
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"cw_pot_infiltration":', cw_flux%PotInfiltration, ',"cw_melt":', cw_flux%Melt, &
+      ',"cw_freeze":', cw_flux%Freeze, ',"cw_mbe":', cw_flux%mbe
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"cw_out_canopy_storage":', cw_out%CanopyStorage, ',"cw_out_swe":', cw_out%SWE, &
+      ',"cw_out_swe_i":', cw_out%swe_i, ',"cw_out_swe_l":', cw_out%swe_l
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"sw_in_wat_sto":', sw_in%WatSto, ',"sw_in_pond_sto":', sw_in%PondSto, &
+      ',"sw_in_wliq":', sw_in%Wliq, ',"sw_in_psi":', sw_in%Psi
+    write(u, '(A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"sw_in_kh":', sw_in%Kh, ',"sw_in_beta":', sw_in%beta
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"sw_infiltration":', sw_flux%Infiltration, ',"sw_drainage":', sw_flux%Drainage, &
+      ',"sw_runoff":', sw_flux%Runoff, ',"sw_lateral_flow":', sw_flux%LateralFlow
+    write(u, '(A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"sw_et":', sw_flux%ET, ',"sw_mbe":', sw_flux%mbe
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A,ES24.15E3,A,ES24.15E3)', advance='no') &
+      ',"sw_out_wat_sto":', sw_out%WatSto, ',"sw_out_pond_sto":', sw_out%PondSto, &
+      ',"sw_out_wliq":', sw_out%Wliq, ',"sw_out_psi":', sw_out%Psi
+    write(u, '(A,ES24.15E3,A,ES24.15E3,A)') &
+      ',"sw_out_kh":', sw_out%Kh, ',"sw_out_beta":', sw_out%beta, '}}'
+  END SUBROUTINE log_integration_hourly
 
   ! ================================================================
   ! Duplicated private functions from water_mod.f90
