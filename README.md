@@ -197,6 +197,25 @@ Both the JAX and TypeScript `mod5c20` transient solvers split the `exp(At)·z₁
 
 The current TypeScript Phase 5 path is validated by a 35-day Qvidja replay test in `packages/svmc-js/test/integration.test.ts`. It mirrors the JAX control flow and fixture contract, runs with `checkLeaks`, and currently uses an eager replay loop rather than a `lax.scan` composition because that is the most stable `jax-js-nonconsuming` execution path for this slice today.
 
+## Updating `jax-js-nonconsuming`
+
+The TypeScript workspace pins `@hamk-uas/jax-js-nonconsuming` in `packages/svmc-js/package.json` using a GitHub tag specifier. To bump it:
+
+1. Update the dependency tag in `packages/svmc-js/package.json`.
+2. Refresh the workspace resolution with:
+
+```bash
+pnpm install --filter @diffsvmc/svmc-js --force
+```
+
+Use the filtered `--force` install rather than a plain top-level `pnpm install` when the lockfile is already pinned to an older git tarball. In practice, the plain install can keep the previous tarball in `pnpm-lock.yaml` and `node_modules` even after the manifest tag changes.
+
+After the bump, verify all three agree on the target release:
+
+- `packages/svmc-js/package.json`
+- `pnpm-lock.yaml`
+- `packages/svmc-js/node_modules/@hamk-uas/jax-js-nonconsuming/package.json` (or the corresponding entry under `node_modules/.pnpm/`)
+
 ## Quick start
 
 ### Prerequisites
