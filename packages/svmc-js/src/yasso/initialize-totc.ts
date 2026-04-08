@@ -255,15 +255,28 @@ export function initializeTotcFn(
   using matrix = evaluateMatrixMeanTempr(param, temprC, precipYr, temprAmpl);
 
   // Blend unit input composition
-  using _awenhRoot = np.array(AWENH_FINEROOT);
-  using _awenhLeaf = np.array(AWENH_LEAF);
-  using _oneMinusRoot = np.array(1.0).sub(fractRootInput);
-  using _rootPart = _awenhRoot.mul(fractRootInput);
-  using _leafPart = _awenhLeaf.mul(_oneMinusRoot);
-  using unitInput = _rootPart.add(_leafPart);
+  using _negRoot = fractRootInput.neg();
+  using _oneMinusRoot = _negRoot.add(1.0);
+  using _root0 = fractRootInput.mul(AWENH_FINEROOT[0]);
+  using _root1 = fractRootInput.mul(AWENH_FINEROOT[1]);
+  using _root2 = fractRootInput.mul(AWENH_FINEROOT[2]);
+  using _root3 = fractRootInput.mul(AWENH_FINEROOT[3]);
+  using _root4 = fractRootInput.mul(AWENH_FINEROOT[4]);
+  using _leaf0 = _oneMinusRoot.mul(AWENH_LEAF[0]);
+  using _leaf1 = _oneMinusRoot.mul(AWENH_LEAF[1]);
+  using _leaf2 = _oneMinusRoot.mul(AWENH_LEAF[2]);
+  using _leaf3 = _oneMinusRoot.mul(AWENH_LEAF[3]);
+  using _leaf4 = _oneMinusRoot.mul(AWENH_LEAF[4]);
+  using _unit0 = _root0.add(_leaf0);
+  using _unit1 = _root1.add(_leaf1);
+  using _unit2 = _root2.add(_leaf2);
+  using _unit3 = _root3.add(_leaf3);
+  using _unit4 = _root4.add(_leaf4);
+  using unitInput = np.stack([_unit0, _unit1, _unit2, _unit3, _unit4]);
 
   // Solve for equilibrium partitioning: A * tmpstate = -unit_input
-  using negInput = np.negative(unitInput);
+  using inputZero = unitInput.mul(0.0);
+  using negInput = inputZero.sub(unitInput);
   using tmpstate = np.linalg.solve(matrix, negInput);
   using sumTmp = np.sum(tmpstate);
   using eqfac = totc.div(sumTmp);
@@ -275,7 +288,15 @@ export function initializeTotcFn(
   using eqnitr = evalSteadystateNitr(eqstate, eqfac, nitrInputYr, matrix);
 
   // Blend equilibrium and legacy
-  using _legacyState = np.array([0.0, 0.0, 0.0, 0.0, 1.0]);
+  using _legacyZero = totc.mul(0.0);
+  using _legacyOne = _legacyZero.add(1.0);
+  using _legacyState = np.stack([
+    _legacyZero,
+    _legacyZero,
+    _legacyZero,
+    _legacyZero,
+    _legacyOne,
+  ]);
   using _legacyC1 = _legacyState.mul(totc);
   using _legacyC = _legacyC1.mul(fractLegacySoc);
   using _oneMinusLegacy = np.array(1.0).sub(fractLegacySoc);

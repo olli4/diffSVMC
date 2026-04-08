@@ -18,8 +18,8 @@ abstract tracing**, not the old cached-jaxpr const ownership bug.
 The official v0.12.10 release passes the focused downstream suite in diffSVMC,
 but one downstream workaround still remains because of this leak path:
 
-1. `integration.test.ts` temporarily suspends leak assertions for the
-  full 1-day `runIntegrationScanExperimental(...)` parity test and logs a
+1. `integration.test.ts` temporarily suspended leak assertions for the
+  full 1-day `runIntegration(...)` parity test and logged a
   known limitation:
 
   - `44 slot(s) leaked (PE intermediates in nested grad/hessian inside traced bodies)`
@@ -63,7 +63,7 @@ Downstream location:
 Pattern:
 
 ```ts
-runIntegrationScanExperimental(inputs)
+runIntegration(inputs)
 // internally: scan -> foriLoop -> pmodelHydraulicsNumerical
 // solver path uses grad(...) and hessian(...)
 ```

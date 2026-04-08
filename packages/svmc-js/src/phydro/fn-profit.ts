@@ -40,9 +40,9 @@ export function fnProfit(
   using jmax = np.exp(logJmax);
 
   using gs = calcGs(dpsi, psiSoil, parPlant, parEnv);
-  const { ci, aj: _aj } = calcAssimLightLimited(gs, jmax, parPhotosynth);
-  ci.dispose();
-  using aj = _aj;
+  const assim = calcAssimLightLimited(gs, jmax, parPhotosynth);
+  using ci = assim.ci;
+  using aj = assim.aj;
 
   // costs = alpha * jmax + gamma * dpsi²
   using costJmax = parCost.alpha.mul(jmax);

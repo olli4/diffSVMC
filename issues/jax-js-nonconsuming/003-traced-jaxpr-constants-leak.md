@@ -10,7 +10,7 @@ but are **never disposed** after the compiled function completes execution.
 
 ## Impact
 
-In the full 1-day `runIntegrationScanExperimental` integration test, this
+In the full 1-day `runIntegration` integration test, this
 causes **417 user-code-site array leaks** (plus ~147 000 library-internal
 leaks), totalling 1804 unique backend storage slots.
 

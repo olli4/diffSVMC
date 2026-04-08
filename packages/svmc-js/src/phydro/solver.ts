@@ -1,5 +1,5 @@
 import { grad, hessian, jit, lax, tree } from "@hamk-uas/jax-js-nonconsuming";
-import { np } from "../precision.js";
+import { np, retainArray } from "../precision.js";
 import { fnProfit } from "./fn-profit.js";
 import { calcGs } from "./calc-gs.js";
 import { calcAssimLightLimited } from "./calc-assim-light-limited.js";
@@ -261,7 +261,7 @@ function projectedNewtonSolveImpl(
     using xNext = np.where(improved, best.x, carry.x);
     using shrunk = np.maximum(carry.lam.mul(LM_SHRINK), LM_MIN);
     using grown = np.minimum(carry.lam.mul(LM_GROW), LM_MAX);
-    const lamNext = np.where(improved, shrunk, grown);
+    using lamNext = np.where(improved, shrunk, grown);
     best.x.dispose();
     best.value.dispose();
     return { x: xNext.ref, lam: lamNext.ref };
@@ -272,6 +272,8 @@ function projectedNewtonSolveImpl(
     lam: np.array(LM_INIT),
   };
   const result = lax.foriLoop(0, NEWTON_MAXITER, body, initCarry);
+  if (result.x !== initCarry.x) initCarry.x.dispose();
+  if (result.lam !== initCarry.lam) initCarry.lam.dispose();
   result.lam.dispose();
   return result.x;
 }
@@ -899,42 +901,47 @@ export function pmodelHydraulicsNumerical(
   profit: np.Array;
   chiJmaxLim: np.Array;
 } {
-  using psiSoilNp = np.array(psiSoilVal);
+  using psiSoilNp = retainArray(psiSoilVal);
 
   // Optimise
   const opt = (() => {
+    using conductivityOpt = retainArray(conductivityVal);
+    using psi50Opt = retainArray(psi50Val);
+    using bOpt = retainArray(bParam);
+    using alphaOpt = retainArray(alphaVal);
+    using gammaOpt = retainArray(gammaCost);
     const parPlantOpt: ParPlant = {
-      conductivity: np.array(conductivityVal),
-      psi50: np.array(psi50Val),
-      b: np.array(bParam),
+      conductivity: conductivityOpt,
+      psi50: psi50Opt,
+      b: bOpt,
     };
     const parCostOpt: ParCost = {
-      alpha: np.array(alphaVal),
-      gamma: np.array(gammaCost),
+      alpha: alphaOpt,
+      gamma: gammaOpt,
     };
 
-    using optTcArr = np.array(tc);
-    using optSpArr = np.array(sp);
+    using optTcArr = retainArray(tc);
+    using optSpArr = retainArray(sp);
     const optKmm = calcKmm(optTcArr, optSpArr);
     const optGsStar = computeGammastar(optTcArr, optSpArr);
-    using optKphioVal = np.array(kphio);
+    using optKphioVal = retainArray(kphio);
     using optFtk = ftempKphio(optTcArr, false);
     const optPhi0 = optKphioVal.mul(optFtk);
-    using optPpfdArr = np.array(ppfd);
-    using optFaparArr = np.array(fapar);
+    using optPpfdArr = retainArray(ppfd);
+    using optFaparArr = retainArray(fapar);
     const optIabs = optPpfdArr.mul(optFaparArr);
-    using optCo2Arr = np.array(co2);
-    using optSpTmpBase = np.array(sp);
+    using optCo2Arr = retainArray(co2);
+    using optSpTmpBase = retainArray(sp);
     using optSpTmp = optSpTmpBase.mul(1e-6);
     const optCa = optCo2Arr.mul(optSpTmp);
-    const optPatm = np.array(sp);
-    const optDelta = np.array(rdarkLeaf);
+    using optPatm = retainArray(sp);
+    using optDelta = retainArray(rdarkLeaf);
 
     const optViscWater = viscosityH2o(optTcArr, optSpArr);
     const optDensWater = densityH2o(optTcArr, optSpArr);
-    const optEnvPatm = np.array(sp);
-    const optEnvTc = np.array(tc);
-    const optEnvVpd = np.array(vpd);
+    using optEnvPatm = retainArray(sp);
+    using optEnvTc = retainArray(tc);
+    using optEnvVpd = retainArray(vpd);
 
     const result = optimiseMidtermMulti(
       psiSoilNp,
@@ -959,72 +966,67 @@ export function pmodelHydraulicsNumerical(
       solverKind,
     );
 
-    parPlantOpt.conductivity.dispose();
-    parPlantOpt.psi50.dispose();
-    parPlantOpt.b.dispose();
-    parCostOpt.alpha.dispose();
-    parCostOpt.gamma.dispose();
+    // Dispose locally-owned intermediates. Retained inputs above use `using`
+    // so they balance both numeric callers and borrowed Array inputs safely.
     optKmm.dispose();
     optGsStar.dispose();
     optPhi0.dispose();
     optIabs.dispose();
     optCa.dispose();
-    optPatm.dispose();
-    optDelta.dispose();
     optViscWater.dispose();
     optDensWater.dispose();
-    optEnvPatm.dispose();
-    optEnvTc.dispose();
-    optEnvVpd.dispose();
 
     return result;
   })();
 
-  using parPlant = tree.makeDisposable({
-    conductivity: np.array(conductivityVal),
-    psi50: np.array(psi50Val),
-    b: np.array(bParam),
-  }) as ParPlant & Disposable;
+  using conductivityArr = retainArray(conductivityVal);
+  using psi50Arr = retainArray(psi50Val);
+  using bArr = retainArray(bParam);
+  const parPlant: ParPlant = {
+    conductivity: conductivityArr,
+    psi50: psi50Arr,
+    b: bArr,
+  };
 
-  using tcArr = np.array(tc);
-  using spArr = np.array(sp);
+  using tcArr = retainArray(tc);
+  using spArr = retainArray(sp);
   const kmm = calcKmm(tcArr, spArr);
   const gs_star = computeGammastar(tcArr, spArr);
-  using kphioVal = np.array(kphio);
+  using kphioVal = retainArray(kphio);
   using ftk = ftempKphio(tcArr, false);
   const phi0 = kphioVal.mul(ftk);
-  using ppfdArr = np.array(ppfd);
-  using faparArr = np.array(fapar);
+  using ppfdArr = retainArray(ppfd);
+  using faparArr = retainArray(fapar);
   const Iabs = ppfdArr.mul(faparArr);
-  using co2Arr = np.array(co2);
-  using _spTmpBase = np.array(sp);
+  using co2Arr = retainArray(co2);
+  using _spTmpBase = retainArray(sp);
   using _spTmp = _spTmpBase.mul(1e-6);
   const ca = co2Arr.mul(_spTmp);
-  const parPhotosynthPatm = np.array(sp);
-  const parPhotosynthDelta = np.array(rdarkLeaf);
 
   const viscWater = viscosityH2o(tcArr, spArr);
   const densWater = densityH2o(tcArr, spArr);
-  const parEnvPatm = np.array(sp);
-  const parEnvTc = np.array(tc);
-  const parEnvVpd = np.array(vpd);
 
-  using parPhotosynth = tree.makeDisposable({
+  using photosynthPatm = retainArray(sp);
+  using deltaArr = retainArray(rdarkLeaf);
+  const parPhotosynth: ParPhotosynth = {
     kmm,
     gammastar: gs_star,
     phi0,
     Iabs,
     ca,
-    patm: parPhotosynthPatm,
-    delta: parPhotosynthDelta,
-  }) as ParPhotosynth & Disposable;
-  using parEnv = tree.makeDisposable({
+    patm: photosynthPatm,
+    delta: deltaArr,
+  };
+  using envPatm = retainArray(sp);
+  using envTc = retainArray(tc);
+  using envVpd = retainArray(vpd);
+  const parEnv: ParEnv = {
     viscosityWater: viscWater,
     densityWater: densWater,
-    patm: parEnvPatm,
-    tc: parEnvTc,
-    vpd: parEnvVpd,
-  }) as ParEnv & Disposable;
+    patm: envPatm,
+    tc: envTc,
+    vpd: envVpd,
+  };
 
   // Evaluate diagnostics at optimum
   using profitRaw = opt.objectiveLoss.neg();
@@ -1053,6 +1055,16 @@ export function pmodelHydraulicsNumerical(
 
   const chi = ci.div(parPhotosynth.ca);
   const chiJmaxLim = np.array(0);
+
+  // Manually dispose owned intermediates; retained input handles above are
+  // cleaned up by their `using` scopes.
+  kmm.dispose();
+  gs_star.dispose();
+  phi0.dispose();
+  Iabs.dispose();
+  ca.dispose();
+  viscWater.dispose();
+  densWater.dispose();
 
   return { jmax, dpsi: dpsiOut, gs, aj, ci, chi, vcmax, profit, chiJmaxLim };
 }

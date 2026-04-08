@@ -1,5 +1,6 @@
 /// <reference path="./vitest.d.ts" />
 
+import { clearCaches, lax } from "@hamk-uas/jax-js-nonconsuming";
 import { describe, it, expect } from "vitest";
 import { np } from "../src/precision.js";
 import {
@@ -13,6 +14,7 @@ import {
   calcGs,
   calcAssimLightLimited,
   fnProfit,
+  optimiseMidtermMulti,
   quadratic,
 } from "../src/phydro/index.js";
 import type {
@@ -345,5 +347,70 @@ describe("P-Hydro solver — Fortran reference", () => {
     result.vcmax.dispose();
     result.profit.dispose();
     result.chiJmaxLim.dispose();
+  });
+
+  // Regression guard: v0.12.10 fixed the nested scan + solver leak path that
+  // previously forced this diagnostic to stay skipped.
+  it("optimiseMidtermMulti works inside lax.scan when params are arrays", () => {
+    using tcArr = np.array(20.0);
+    using patmArr = np.array(101325.0);
+    using psiSoil = np.array(-0.5);
+    using vpdArr = np.array(1000.0);
+    using ppfdArr = np.array(300.0);
+    using faparArr = np.array(0.9);
+    using co2Arr = np.array(400.0);
+    using rdarkArr = np.array(0.015);
+    using conductivityArr = np.array(4e-16);
+    using psi50Arr = np.array(-3.46);
+    using bArr = np.array(2.0);
+    using alphaArr = np.array(0.1);
+    using gammaArr = np.array(0.5);
+    using xs = np.array([0.0]);
+    using init = np.array(0.0);
+
+    const parCost: ParCost = { alpha: alphaArr, gamma: gammaArr };
+    const parPlant: ParPlant = {
+      conductivity: conductivityArr,
+      psi50: psi50Arr,
+      b: bArr,
+    };
+    const parEnv: ParEnv = {
+      viscosityWater: viscosityH2o(tcArr, patmArr),
+      densityWater: densityH2o(tcArr, patmArr),
+      patm: patmArr,
+      tc: tcArr,
+      vpd: vpdArr,
+    };
+    const parPhotosynth: ParPhotosynth = {
+      kmm: calcKmm(tcArr, patmArr),
+      gammastar: gammastar(tcArr, patmArr),
+      phi0: ftempKphio(tcArr, false).mul(KPHIO),
+      Iabs: ppfdArr.mul(faparArr),
+      ca: co2Arr.mul(patmArr.mul(1e-6)),
+      patm: patmArr,
+      delta: rdarkArr,
+    };
+
+    try {
+      const [carry, ys] = lax.scan((c: np.Array, _x: np.Array): [np.Array, np.Array] => {
+        const result = optimiseMidtermMulti(psiSoil, parCost, parPhotosynth, parPlant, parEnv);
+        return [c, result.jmax];
+      }, init, xs, { length: 1 });
+
+      carry.dispose();
+      using outputs = ys;
+      const values = outputs.js() as number[];
+      expect(Number.isFinite(values[0])).toBe(true);
+      expect(values[0]).toBeGreaterThan(0.0);
+    } finally {
+      clearCaches();
+      parEnv.viscosityWater.dispose();
+      parEnv.densityWater.dispose();
+      parPhotosynth.kmm.dispose();
+      parPhotosynth.gammastar.dispose();
+      parPhotosynth.phi0.dispose();
+      parPhotosynth.Iabs.dispose();
+      parPhotosynth.ca.dispose();
+    }
   });
 });

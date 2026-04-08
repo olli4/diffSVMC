@@ -364,8 +364,10 @@ export function canopyWaterFlux(
 ): [CanopyWaterState, CanopyWaterFlux] {
   // Aerodynamic resistances
   const aero = aerodynamics(lai, u, aeroParams);
-  using ra = aero.ra;
-  using ras = aero.ras;
+  using ra = aero.ra.ref;
+  using ras = aero.ras.ref;
+  aero.ra.dispose();
+  aero.ras.dispose();
   aero.rb.dispose();
   aero.ustar.dispose();
   aero.Uh.dispose();
@@ -378,16 +380,16 @@ export function canopyWaterFlux(
   );
 
   // Ground evaporation
-  using _oneF = np.array(1);
-  using _oneMinusFapar = _oneF.sub(fapar);
+  using _negFapar = fapar.neg();
+  using _oneMinusFapar = _negFapar.add(1.0);
   using aeSoil = rn.mul(_oneMinusFapar);
   const SoilEvap = groundEvaporation(
     ta, aeSoil, vpd, ras, patm, newState.SWE, swBeta, swWatSto,
     csParams.gsoil, timeStep,
   );
 
-  const ET = np.array(0);
-  const Transpiration = np.array(0);
+  const ET = SoilEvap.mul(0.0);
+  const Transpiration = SoilEvap.mul(0.0);
 
   const flux: CanopyWaterFlux = {
     Throughfall: csFlux.Throughfall,

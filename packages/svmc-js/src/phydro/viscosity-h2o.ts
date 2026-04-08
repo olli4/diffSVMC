@@ -67,24 +67,24 @@ export function viscosityH2o(tc: np.Array, patm: np.Array): np.Array {
     let coef2 = np.array(0);
     for (let j = 0; j < 7; j++) {
       if (h[j][i] === 0.0) continue;
+      const prevCoef2 = coef2;
       using _jaxTmp5 = np.array(j);
       using rbar_pow_j =
         j === 0 ? np.array(1) : np.power(rbar_m1, _jaxTmp5);
       using term = rbar_pow_j.mul(h[j][i]);
-      const newCoef2 = coef2.add(term);
-      coef2.dispose();
-      coef2 = newCoef2;
+      coef2 = prevCoef2.add(term);
+      prevCoef2.dispose();
     }
-    using prod = ctbar_pow_i.mul(coef2);
-    const newSum = sum_result.add(prod);
-    sum_result.dispose();
-    sum_result = newSum;
-    coef2.dispose();
+    using finalCoef2 = coef2;
+    using prod = ctbar_pow_i.mul(finalCoef2);
+    const prevSum = sum_result;
+    sum_result = prevSum.add(prod);
+    prevSum.dispose();
   }
 
-  using _jaxTmp6 = rbar.mul(sum_result);
+  using finalSum = sum_result;
+  using _jaxTmp6 = rbar.mul(finalSum);
   using mu1 = np.exp(_jaxTmp6);
-  sum_result.dispose();
 
   // mu = mu0 * mu1 * mu_ast
   using _mu_partial = mu0.mul(mu1);

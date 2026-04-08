@@ -51,69 +51,74 @@ export function aerodynamics(
   using zm1_d = zm1.sub(d);
   using _jaxTmp2 = zm1_d.div(zom);
   using _jaxTmp3 = np.log(_jaxTmp2);
-  const ustar = Uo.mul(kv).div(_jaxTmp3);
+  using _ustarMul = Uo.mul(kv);
+  using ustarVal = _ustarMul.div(_jaxTmp3);
+  const ustar = ustarVal.ref;
 
   // Uh = ustar / kv * ln((hc - d) / zom)
   using hc_d = params.hc.sub(d);
   using _jaxTmp4 = hc_d.div(zom);
   using _jaxTmp5 = np.log(_jaxTmp4);
   using _UhDiv = ustar.div(kv);
-  const Uh = _UhDiv.mul(_jaxTmp5);
+  using UhVal = _UhDiv.mul(_jaxTmp5);
+  const Uh = UhVal.ref;
 
   // Ug = Uh * exp(alpha1 * (zn - 1))
   using _jaxTmp6 = zg1.div(params.hc);
-  using _jaxTmp7 = np.array(1);
-  using zn = np.minimum(_jaxTmp6, _jaxTmp7);
+  using zn = np.minimum(_jaxTmp6, 1.0);
   using _jaxTmp8 = zn.sub(1);
   using _jaxTmp9 = alpha1.mul(_jaxTmp8);
   using _jaxTmp10 = np.exp(_jaxTmp9);
-  const Ug = Uh.mul(_jaxTmp10);
+  using UgVal = Uh.mul(_jaxTmp10);
+  const Ug = UgVal.ref;
 
   // ra = 1/(kv² * Uo) * ln((zm1-d)/zom) * ln((zm1-d)/zov)
   using _jaxTmp11 = zm1_d.div(zom);
   using log_zom = np.log(_jaxTmp11);
   using _jaxTmp12 = zm1_d.div(zov);
   using log_zov = np.log(_jaxTmp12);
-  using _npConst1 = np.array(kv * kv);
-  using _jaxTmp13 = _npConst1.mul(Uo);
-  using _npConst2 = np.array(1);
-  using _raB1 = _npConst2.div(_jaxTmp13);
+  using _jaxTmp13 = Uo.mul(kv * kv);
+  using _raZero = Uo.mul(0.0);
+  using _raOne = _raZero.add(1.0);
+  using _raB1 = _raOne.div(_jaxTmp13);
   using _raB2 = _raB1.mul(log_zom);
-  using ra_base = _raB2.mul(log_zov);
+  using raBase = _raB2.mul(log_zov);
 
   // rb = (1/LAI) * beta * sqrt((w_leaf / Uh) * (alpha1 / (1 - exp(-alpha1/2))))^0.5
   using halfAlpha = alpha1.mul(-0.5);
   using _jaxTmp14 = np.exp(halfAlpha);
-  using _npConst3 = np.array(1);
-  using denomRb = _npConst3.sub(_jaxTmp14);
+  using _negExpHalfAlpha = _jaxTmp14.neg();
+  using denomRb = _negExpHalfAlpha.add(1.0);
   using _jaxTmp15 = denomRb.add(eps);
   using _jaxTmp16 = alpha1.div(_jaxTmp15);
-  using rbInner = params.w_leaf
-    .div(Uh)
-    .mul(_jaxTmp16);
+  using _rbWidthOverUh = params.w_leaf.div(Uh);
+  using rbInner = _rbWidthOverUh.mul(_jaxTmp16);
   using _jaxTmp17 = LAI.add(eps);
   using _jaxTmp18 = np.sqrt(rbInner);
-  using _npConst4 = np.array(1);
-  using _rbV1 = _npConst4.div(_jaxTmp17);
+  using _rbZero = _jaxTmp17.mul(0.0);
+  using _rbOne = _rbZero.add(1.0);
+  using _rbV1 = _rbOne.div(_jaxTmp17);
   using _rbV2 = _rbV1.mul(beta_aero);
   using rb_val = _rbV2.mul(_jaxTmp18);
 
   // When LAI > eps, use rb_val; otherwise 0 (handled by LAI+eps above)
   const rb = rb_val.ref; // zero-copy refcount increment
 
-  const ra = ra_base.add(rb);
+  using raVal = raBase.add(rb);
+  const ra = raVal.ref;
 
   // ras = 1/(kv² * Ug) * ln(zground/zo_ground) * ln(zground/zosv)
   using _jaxTmp19 = params.zground.div(params.zo_ground);
   using log_zg = np.log(_jaxTmp19);
   using _jaxTmp20 = params.zground.div(zosv);
   using log_zgsv = np.log(_jaxTmp20);
-  using _npConst5 = np.array(kv * kv);
-  using _jaxTmp21 = _npConst5.mul(Ug);
-  using _npConst6 = np.array(1);
-  using _rasB1 = _npConst6.div(_jaxTmp21);
+  using _jaxTmp21 = Ug.mul(kv * kv);
+  using _rasZero = Ug.mul(0.0);
+  using _rasOne = _rasZero.add(1.0);
+  using _rasB1 = _rasOne.div(_jaxTmp21);
   using _rasB2 = _rasB1.mul(log_zg);
-  const ras = _rasB2.mul(log_zgsv);
+  using rasVal = _rasB2.mul(log_zgsv);
+  const ras = rasVal.ref;
 
   return { ra, rb, ras, ustar, Uh, Ug };
 }

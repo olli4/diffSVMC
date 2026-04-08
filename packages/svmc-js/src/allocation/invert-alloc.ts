@@ -135,15 +135,14 @@ export function invertAllocFn(
   using _rawNum2 = _rawNum.add(_rawNum2a);
   using _rawNum3 = _rawNum2.add(grRespLeaf);
   using _rawNum4 = _rawNum3.add(mgmtTerm);
-  using _epsVal1 = np.array(EPS);
-  using _ratioNum = np.maximum(gppDay, _epsVal1);
+  using _ratioNum = np.maximum(gppDay, EPS);
   using _rawDenomSpd = _ratioNum.mul(SPD);
   using _rawRatio = _rawNum4.div(_rawDenomSpd);
   using rawCratio = np.clip(_rawRatio, 0.1, 0.9);
 
   using cratioLeaf1 = np.where(gppAboveThreshold, rawCratio, cratioLeaf);
-  using _one = np.array(1.0);
-  using _oneMinusCL1 = _one.sub(cratioLeaf1);
+  using _negCL1 = cratioLeaf1.neg();
+  using _oneMinusCL1 = _negCL1.add(1.0);
   using cratioRoot1 = np.where(gppAboveThreshold, _oneMinusCL1, cratioRoot);
   using _cleafPlusDelta = cleaf.add(deltaCleaf);
   using cleaf1 = np.maximum(_cleafPlusDelta, 0.0);
@@ -158,10 +157,8 @@ export function invertAllocFn(
   using _rawTNum2 = _rawTNum.sub(_rawTNum2a);
   using _rawTNum3 = _rawTNum2.sub(grRespLeaf);
   using _rawTNum4 = _rawTNum3.sub(mgmtTerm);
-  using _epsVal2 = np.array(EPS);
-  using _safeCleaf = np.maximum(cleaf, _epsVal2);
-  using _epsVal3 = np.array(EPS);
-  using _safeQ10f = np.maximum(q10f, _epsVal3);
+  using _safeCleaf = np.maximum(cleaf, EPS);
+  using _safeQ10f = np.maximum(q10f, EPS);
   using _rawTDiv1 = _rawTNum4.div(_safeCleaf);
   using _rawTurnover = _rawTDiv1.div(_safeQ10f);
   using turnoverCleaf2 = np.where(cleafAboveThreshold, _rawTurnover, turnoverCleaf);

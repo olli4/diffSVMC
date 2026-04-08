@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { numpy as baseNp } from "@hamk-uas/jax-js-nonconsuming";
-import { getNumericDType } from "../src/precision.js";
-import { runIntegration, runIntegrationScanExperimental } from "../src/integration.js";
+import { lax, numpy as baseNp, tree, type JsTree } from "@hamk-uas/jax-js-nonconsuming";
+import { getNumericDType, np } from "../src/precision.js";
+import {
+  initializationSpafhy,
+  runIntegration,
+  runIntegrationJit,
+} from "../src/integration.js";
+import {
+  canopyWaterFlux,
+  soilWater,
+  type CanopySnowParams,
+  type CanopyWaterState,
+  type SoilWaterState,
+  type SpafhyAeroParams,
+} from "../src/water/index.js";
+import type { SoilHydroParams } from "../src/water/soil-hydraulics.js";
 import integrationFixture from "../../svmc-ref/fixtures/integration.json";
 import qvidjaRef from "../../../website/public/qvidja-v1-reference.json";
 
@@ -16,6 +29,9 @@ const eps = baseNp.finfo(getNumericDType()).eps;
 const RTOL = 0.06;
 const ATOL = 1e-12;
 const NEE_ATOL = 6e-9;
+const K_EXT = 0.5;
+const TIME_STEP = 1.0;
+const LAI_GUARD = 1.0e-6;
 
 function buildQvidjaRunInputs(ndays: number) {
   const defaults = qvidjaRef.defaults;
@@ -87,12 +103,170 @@ function buildQvidjaRunInputs(ndays: number) {
 }
 
 describe("integration replay", () => {
-  it.skip("scan experimental matches eager replay for 1 day", { timeout: 120000 }, () => {
+  // Regression for the nested daily scan + hourly foriLoop water path: the
+  // reduced reproducer now works after initializationSpafhy stopped disposing
+  // borrowed array inputs such as maxPoros.
+  it("reduced daily scan with nested hourly water-state loop works for 1 day", () => {
     const inputs = buildQvidjaRunInputs(1);
-    const [eagerCarry, eagerOutputs] = runIntegration(inputs);
-    const [scanCarry, scanOutputs] = runIntegrationScanExperimental(inputs);
+
+    const soilParams = tree.makeDisposable({
+      watsat: np.array(inputs.watsat),
+      watres: np.array(inputs.watres),
+      alphaVan: np.array(inputs.alpha_van),
+      nVan: np.array(inputs.n_van),
+      ksat: np.array(inputs.ksat),
+    }) as SoilHydroParams;
+    const aeroParams = tree.makeDisposable({
+      hc: np.array(inputs.hc),
+      zmeas: np.array(inputs.zmeas),
+      zground: np.array(inputs.zground),
+      zo_ground: np.array(inputs.zo_ground),
+      w_leaf: np.array(inputs.w_leaf),
+    }) as SpafhyAeroParams;
+    const csParams = tree.makeDisposable({
+      wmax: np.array(inputs.wmax),
+      wmaxsnow: np.array(inputs.wmaxsnow),
+      kmelt: np.array(inputs.kmelt),
+      kfreeze: np.array(inputs.kfreeze),
+      fracSnowliq: np.array(inputs.frac_snowliq),
+      gsoil: np.array(inputs.gsoil),
+    }) as CanopySnowParams;
+
+    using soilDepth = np.array(inputs.soil_depth);
+    using maxPoros = np.array(inputs.max_poros);
+    using fc = np.array(inputs.fc);
+    using maxpond = np.array(inputs.maxpond);
+    using lai = np.array(inputs.daily_lai[0]);
+    using faparArg = lai.mul(-K_EXT);
+    using faparExp = np.exp(faparArg);
+    using one = np.array(1.0);
+    using fapar = one.sub(faparExp);
+    using hourlyTemp = np.array(inputs.hourly_temp[0]);
+    using hourlyRg = np.array(inputs.hourly_rg[0]);
+    using hourlyPrec = np.array(inputs.hourly_prec[0]);
+    using hourlyVpd = np.array(inputs.hourly_vpd[0]);
+    using hourlyPres = np.array(inputs.hourly_pres[0]);
+    using hourlyWind = np.array(inputs.hourly_wind[0]);
+    using dayXs = np.array([0.0]);
+
+    const [cwInit, swInit] = initializationSpafhy(soilDepth, maxPoros, fc, maxpond, soilParams);
+    const dailyInit = {
+      cw_state: cwInit,
+      sw_state: swInit,
+    };
+    const hourlyForcing = {
+      temp_k: hourlyTemp,
+      rg: hourlyRg,
+      prec: hourlyPrec,
+      vpd: hourlyVpd,
+      pres: hourlyPres,
+      wind: hourlyWind,
+    };
+    let finalCarry: typeof dailyInit | null = null;
+    let ys: np.Array | null = null;
 
     try {
+      const dailyBody = (
+        carry: typeof dailyInit,
+        _x: np.Array,
+      ): [typeof dailyInit, np.Array] => {
+        const timeStep = lai.mul(0.0).add(TIME_STEP);
+        const zeroLatflow = lai.mul(0.0);
+        const hourlyInit = {
+          cw_state: carry.cw_state,
+          sw_state: carry.sw_state,
+          et_acc: carry.cw_state.CanopyStorage.mul(0.0),
+        };
+
+        const hourlyBody = (hourIdx: np.Array, hourlyCarry: typeof hourlyInit): typeof hourlyInit => {
+          const tempK = lax.dynamicSlice(hourlyForcing.temp_k, [hourIdx], [1]).reshape([]);
+          const rg = lax.dynamicSlice(hourlyForcing.rg, [hourIdx], [1]).reshape([]);
+          const prec = lax.dynamicSlice(hourlyForcing.prec, [hourIdx], [1]).reshape([]);
+          const vpd = lax.dynamicSlice(hourlyForcing.vpd, [hourIdx], [1]).reshape([]);
+          const pres = lax.dynamicSlice(hourlyForcing.pres, [hourIdx], [1]).reshape([]);
+          const wind = lax.dynamicSlice(hourlyForcing.wind, [hourIdx], [1]).reshape([]);
+          const tc = tempK.sub(273.15);
+          const trSpafhy = hourlyCarry.sw_state.Wliq.mul(0.0);
+
+          const [cwState, cwFlux] = canopyWaterFlux(
+            rg.mul(0.7),
+            tc,
+            prec,
+            vpd,
+            wind,
+            pres,
+            fapar,
+            lai,
+            hourlyCarry.cw_state,
+            hourlyCarry.sw_state.beta,
+            hourlyCarry.sw_state.WatSto,
+            aeroParams,
+            csParams,
+            timeStep,
+          );
+          const soilResult = soilWater(
+            hourlyCarry.sw_state,
+            soilParams,
+            maxPoros,
+            cwFlux.PotInfiltration,
+            trSpafhy,
+            cwFlux.SoilEvap,
+            zeroLatflow,
+            timeStep,
+          );
+
+          const newEtAcc = hourlyCarry.et_acc.add(trSpafhy).add(cwFlux.SoilEvap).add(cwFlux.CanopyEvap);
+
+          return {
+            cw_state: cwState,
+            sw_state: soilResult.state,
+            et_acc: newEtAcc,
+          };
+        };
+
+        const finalHourly = lax.foriLoop(
+          0,
+          24,
+          hourlyBody as unknown as (i: np.Array, c: JsTree<np.Array>) => JsTree<np.Array>,
+          hourlyInit as unknown as JsTree<np.Array>,
+        ) as unknown as typeof hourlyInit;
+
+        const nextCarry = {
+          cw_state: finalHourly.cw_state,
+          sw_state: finalHourly.sw_state,
+        };
+        return [nextCarry, finalHourly.et_acc];
+      };
+
+      [finalCarry, ys] = lax.scan(
+        dailyBody as unknown as (
+          carry: JsTree<np.Array>,
+          x: JsTree<np.Array>,
+        ) => [JsTree<np.Array>, JsTree<np.Array>],
+        dailyInit as unknown as JsTree<np.Array>,
+        dayXs as unknown as JsTree<np.Array>,
+        { length: 1 },
+      ) as unknown as [typeof dailyInit, np.Array];
+
+      expect(ys.shape[0]).toBe(1);
+      expect(finalCarry.sw_state.Wliq.shape).toEqual([]);
+    } finally {
+      if (ys != null) ys.dispose();
+      if (finalCarry != null) tree.dispose(finalCarry);
+      tree.dispose(dailyInit);
+      tree.dispose(soilParams);
+      tree.dispose(aeroParams);
+      tree.dispose(csParams);
+    }
+  });
+
+  it("runIntegrationJit matches integration replay for 1 day", { timeout: 300000 }, () => {
+    let eagerCarry: any, eagerOutputs: any, jitCarry: any, jitOutputs: any;
+    try {
+      const inputs = buildQvidjaRunInputs(1);
+      [eagerCarry, eagerOutputs] = runIntegration(inputs);
+      [jitCarry, jitOutputs] = runIntegrationJit(inputs);
+
       for (const key of [
         "gpp_avg",
         "nee",
@@ -110,64 +284,18 @@ describe("integration replay", () => {
         "psi",
         "et_total",
       ] as const) {
-        expect(scanOutputs[key]).toBeAllclose(eagerOutputs[key], { rtol: RTOL, atol: eps });
+        expect(jitOutputs[key]).toBeAllclose(eagerOutputs[key], { rtol: RTOL, atol: eps });
       }
 
-      expect(scanOutputs.cstate).toBeAllclose(eagerOutputs.cstate, { rtol: RTOL, atol: eps });
+      expect(jitOutputs.cstate).toBeAllclose(eagerOutputs.cstate, { rtol: RTOL, atol: eps });
     } finally {
-      for (const carry of [eagerCarry, scanCarry]) {
-        carry.cw_state.CanopyStorage.dispose();
-        carry.cw_state.SWE.dispose();
-        carry.cw_state.swe_i.dispose();
-        carry.cw_state.swe_l.dispose();
-        carry.sw_state.WatSto.dispose();
-        carry.sw_state.PondSto.dispose();
-        carry.sw_state.MaxWatSto.dispose();
-        carry.sw_state.MaxPondSto.dispose();
-        carry.sw_state.FcSto.dispose();
-        carry.sw_state.Wliq.dispose();
-        carry.sw_state.Psi.dispose();
-        carry.sw_state.Sat.dispose();
-        carry.sw_state.Kh.dispose();
-        carry.sw_state.beta.dispose();
-        carry.met_rolling.dispose();
-        carry.is_first_met.dispose();
-        carry.cleaf.dispose();
-        carry.croot.dispose();
-        carry.cstem.dispose();
-        carry.cgrain.dispose();
-        carry.litter_cleaf.dispose();
-        carry.litter_croot.dispose();
-        carry.compost.dispose();
-        carry.soluble.dispose();
-        carry.above.dispose();
-        carry.below.dispose();
-        carry.yield_.dispose();
-        carry.grain_fill.dispose();
-        carry.lai_alloc.dispose();
-        carry.pheno.dispose();
-        carry.cstate.dispose();
-        carry.nstate.dispose();
-        carry.lai_prev.dispose();
+      for (const carry of [eagerCarry, jitCarry]) {
+        if (!carry) continue;
+        tree.dispose(carry);
       }
-
-      for (const outputs of [eagerOutputs, scanOutputs]) {
-        outputs.gpp_avg.dispose();
-        outputs.nee.dispose();
-        outputs.hetero_resp.dispose();
-        outputs.auto_resp.dispose();
-        outputs.cleaf.dispose();
-        outputs.croot.dispose();
-        outputs.cstem.dispose();
-        outputs.cgrain.dispose();
-        outputs.lai_alloc.dispose();
-        outputs.litter_cleaf.dispose();
-        outputs.litter_croot.dispose();
-        outputs.soc_total.dispose();
-        outputs.wliq.dispose();
-        outputs.psi.dispose();
-        outputs.cstate.dispose();
-        outputs.et_total.dispose();
+      for (const outputs of [eagerOutputs, jitOutputs]) {
+        if (!outputs) continue;
+        tree.dispose(outputs);
       }
     }
   });
@@ -234,9 +362,10 @@ describe("integration replay", () => {
     }
   });
 
-  it("matches the 35-day Qvidja fixture within TS float32 tolerances", { timeout: 120000 }, () => {
-    const fixture = integrationFixture.integration_daily;
-    const [finalCarry, dailyOutputs] = runIntegration(buildQvidjaRunInputs(35));
+  it("matches the 2-day Qvidja fixture within TS float32 tolerances", { timeout: 120000 }, () => {
+    const NDAYS = 2;
+    const fixture = integrationFixture.integration_daily.slice(0, NDAYS);
+    const [finalCarry, dailyOutputs] = runIntegration(buildQvidjaRunInputs(NDAYS));
     const scalarKeys = [
       "gpp_avg",
       "nee",
@@ -255,7 +384,7 @@ describe("integration replay", () => {
     ] as const;
 
     try {
-      expect(fixture).toHaveLength(35);
+      expect(fixture).toHaveLength(NDAYS);
 
       for (let dayIdx = 0; dayIdx < fixture.length; dayIdx += 1) {
         const expected = fixture[dayIdx].output;

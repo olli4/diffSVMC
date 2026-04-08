@@ -13,7 +13,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@hamk-uas/jax-js-nonconsuming": "github:hamk-uas/jax-js-nonconsuming#v0.12.4"
+    "@hamk-uas/jax-js-nonconsuming": "github:hamk-uas/jax-js-nonconsuming#v0.12.14"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

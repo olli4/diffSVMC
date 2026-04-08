@@ -14,7 +14,7 @@
  * differentiable via jax-js-nonconsuming autodiff (jit/grad/vjp).
  */
 
-import { np } from "../precision.js";
+import { np, retainArray } from "../precision.js";
 
 const DAYS_YR = 365.25;
 const NC_MB = 0.1;      // microbial biomass N:C ratio
@@ -96,7 +96,7 @@ function evaluateMatrix(param: np.Array, tempr: np.Array, precipYr: np.Array): n
   using p13 = el(param, 13); using p14 = el(param, 14); using p15 = el(param, 15);
   using p30 = el(param, 30);
 
-  using zero = np.array(0);
+  const zero = 0;
 
   // Assemble rows (no leaching terms, no size dependence)
   using _r01 = p4.mul(ad1);  using _r02 = p5.mul(ad2);  using _r03 = p6.mul(ad3);
@@ -136,16 +136,17 @@ function evaluateMatrix(param: np.Array, tempr: np.Array, precipYr: np.Array): n
  */
 export function decomposeFn(
   param: np.Array,
-  timestepDays: np.Array,
+  timestepDays: np.ArrayLike,
   temprC: np.Array,
   precipDay: np.Array,
   cstate: np.Array,
   nstate: np.Array,
 ): { ctend: np.Array; ntend: np.Array } {
+  using timestepDaysArr = retainArray(timestepDays);
   // Carbon: explicit Euler
   using precipYr = precipDay.mul(DAYS_YR);
   using matrix = evaluateMatrix(param, temprC, precipYr);
-  using timestepYr = timestepDays.div(DAYS_YR);
+  using timestepYr = timestepDaysArr.div(DAYS_YR);
   using _ac = np.matmul(matrix, cstate);
   const ctend = _ac.mul(timestepYr);
   using negCtend = np.negative(ctend);
@@ -164,7 +165,7 @@ export function decomposeFn(
   // PORT-BRANCH: cstate[4]*nc_h_max > nstate -> nc_h = nstate/totc
   using _guard = totc.add(1e-30);
   using ncHUnusual = nstate.div(_guard);
-  using ncHNormal = np.array(NC_H_MAX);
+  const ncHNormal = NC_H_MAX;
   using _checkH = cs4.mul(NC_H_MAX);
   using _condH = _checkH.greater(nstate);
   using ncH = np.where(_condH, ncHUnusual, ncHNormal);
@@ -180,25 +181,25 @@ export function decomposeFn(
   using _ratio = ncSom.div(NC_MB);
   using _power = np.power(_ratio, 0.6);
   using _cueRaw = _power.mul(0.43);
-  using _cueMax = np.minimum(_cueRaw, np.array(1.0));
-  using cue = np.maximum(_cueMax, np.array(CUE_MIN));
+  using _cueMax = np.minimum(_cueRaw, 1.0);
+  using cue = np.maximum(_cueMax, CUE_MIN);
 
-  using _oneMinusCue = np.array(1.0).sub(cue);
+  using _negCue = cue.neg();
+  using _oneMinusCue = _negCue.add(1.0);
   using _respMinusDH = resp.sub(decompH);
   using cuptAwen = _respMinusDH.div(_oneMinusCue);
   using growthC = cue.mul(cuptAwen);
 
   // ntend = nc_mb * growth_c - nc_awen * cupt_awen - nc_h * decomp_h
-  using _t1 = np.array(NC_MB).mul(growthC);
+  using _t1 = growthC.mul(NC_MB);
   using _t2 = ncAwen.mul(cuptAwen);
   using _t3 = ncH.mul(decompH);
   using _t12 = _t1.sub(_t2);
   using ntendComputed = _t12.sub(_t3);
 
   // PORT-BRANCH: totc < 1e-6 -> ntend = 0
-  using _zeroN = np.array(0);
   using _condLow = totc.less(1e-6);
-  const ntend = np.where(_condLow, _zeroN, ntendComputed);
+  const ntend = np.where(_condLow, 0.0, ntendComputed);
 
   return { ctend, ntend };
 }

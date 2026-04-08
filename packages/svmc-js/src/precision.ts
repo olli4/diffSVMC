@@ -23,7 +23,7 @@ function readNumericDTypeFromEnv(): NumericDType {
   return raw === DType.Float64 ? DType.Float64 : DEFAULT_NUMERIC_DTYPE;
 }
 
-function isProjectArray(value: unknown): boolean {
+function isProjectArray(value: unknown): value is NpArray {
   return value instanceof NpArray;
 }
 
@@ -61,6 +61,18 @@ export function createPrecisionNp(dtype: NumericDType): typeof baseNp {
 }
 
 export const array = createArrayForDType(configuredNumericDType);
+
+export function asArray(value: NpArrayLike): NpArray {
+  if (isProjectArray(value)) return value;
+  const result = array(value);
+  return result as NpArray;
+}
+
+export function retainArray(value: NpArrayLike): NpArray {
+  if (isProjectArray(value)) return value.ref;
+  const result = array(value);
+  return result as NpArray;
+}
 
 export const np = createPrecisionNp(configuredNumericDType);
 

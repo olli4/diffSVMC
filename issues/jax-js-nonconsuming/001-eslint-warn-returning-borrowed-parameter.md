@@ -50,3 +50,9 @@ Add a lint rule (candidate for the `strict` tier mentioned in the repo's
 Discovered while porting SVMC allocation submodels to `svmc-js`. The
 `no-nested-array-leak` rule in `strict` may partially overlap — worth
 checking whether it already covers this case before adding a new rule.
+
+## Resolution
+
+**Fixed in v0.12.6** — New ESLint rule `no-borrowed-param-return`
+(`@hamk-uas/eslint-plugin-jax-js` v0.1.3) flags functions that return a
+borrowed `np.Array` or `Tracer` parameter without retaining via `.ref`.

@@ -117,8 +117,8 @@ export function allocHypothesis2Fn(
   using grRespLeaf = _grRespLeafPre.mul(0.11);
 
   using _oneMinusCLCR = cratioLeaf.add(cratioRoot);
-  using _oneVal = np.array(1.0);
-  using _stemFrac = _oneVal.sub(_oneMinusCLCR);
+  using _stemFracNeg = _oneMinusCLCR.neg();
+  using _stemFrac = _stemFracNeg.add(1.0);
   using _gppStem = gppDay.mul(_stemFrac);
   using _cstemResp1b = cstem.mul(cratioResp);
   using _cstemResp = _cstemResp1b.mul(q10f);
@@ -171,7 +171,7 @@ export function allocHypothesis2Fn(
   using litterCstemG = _lcStem1.mul(q10f);
   using _lcRoot1 = croot.mul(turnoverCroot);
   using litterCrootG = _lcRoot1.mul(q10f);
-  using compostG = np.array(0.0);
+  using compostG = managementCInput.mul(0.0);
 
   // Update pools (before management)
   using _cleafGpp1 = gppDay.mul(cratioLeaf);
@@ -301,8 +301,9 @@ export function allocHypothesis2Fn(
   using dLitterCleaf = cleaf;
   using dLitterCroot = croot;
   using dAbove = cgrain.div(cratioBiomass);
-  using dBelow = np.array(0.0);
-  using dLai = np.array(0.0);
+  using dBelow = croot.mul(0.0);
+  using dLai = cleaf.mul(0.0);
+  const yieldZero = cgrain.mul(0.0);
 
   // ---------- SELECT BY PHENOLOGICAL STAGE ----------
   return {
@@ -318,7 +319,7 @@ export function allocHypothesis2Fn(
     lai: np.where(isGrowth, gLai, dLai),
     abovebiomass: np.where(isGrowth, gAbove, dAbove),
     belowbiomass: np.where(isGrowth, gBelow, dBelow),
-    yield: np.array(0.0),    // never modified
+    yield: yieldZero,
     grainFill: grainFill.ref,
     phenoStage: np.where(isGrowth, 1, 1),  // both paths reset to 1
   };
