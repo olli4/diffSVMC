@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { lax, numpy as baseNp, tree, type JsTree } from "@hamk-uas/jax-js-nonconsuming";
+import { jit, lax, numpy as baseNp, tree, type JsTree } from "@hamk-uas/jax-js-nonconsuming";
 import { getNumericDType, np } from "../src/precision.js";
 import {
   initializationSpafhy,
+  prepareRunIntegrationInputs,
+  type RunIntegrationInputs,
   runIntegration,
-  runIntegrationJit,
 } from "../src/integration.js";
 import {
   canopyWaterFlux,
   soilWater,
   type CanopySnowParams,
-  type CanopyWaterState,
-  type SoilWaterState,
   type SpafhyAeroParams,
 } from "../src/water/index.js";
 import type { SoilHydroParams } from "../src/water/soil-hydraulics.js";
@@ -31,13 +30,11 @@ const ATOL = 1e-12;
 const NEE_ATOL = 6e-9;
 const K_EXT = 0.5;
 const TIME_STEP = 1.0;
-const LAI_GUARD = 1.0e-6;
 
 function buildQvidjaRunInputs(ndays: number) {
   const defaults = qvidjaRef.defaults;
   const hourly = qvidjaRef.hourly;
   const daily = qvidjaRef.daily;
-  const nhours = ndays * 24;
 
   return {
     hourly_temp: Array.from({ length: ndays }, (_, day) => hourly.temp_hr.slice(day * 24, (day + 1) * 24)),
@@ -170,6 +167,7 @@ describe("integration replay", () => {
         carry: typeof dailyInit,
         _x: np.Array,
       ): [typeof dailyInit, np.Array] => {
+        void _x;
         const timeStep = lai.mul(0.0).add(TIME_STEP);
         const zeroLatflow = lai.mul(0.0);
         const hourlyInit = {
@@ -260,12 +258,17 @@ describe("integration replay", () => {
     }
   });
 
-  it("runIntegrationJit matches integration replay for 1 day", { timeout: 300000 }, () => {
-    let eagerCarry: any, eagerOutputs: any, jitCarry: any, jitOutputs: any;
+  it("caller-side jit(runIntegration) matches eager for 1 day", { timeout: 300000 }, () => {
+    let eagerCarry: any, eagerOutputs: any, directJitCarry: any, directJitOutputs: any;
+    let inputs: RunIntegrationInputs | null = null;
     try {
-      const inputs = buildQvidjaRunInputs(1);
+      inputs = prepareRunIntegrationInputs(buildQvidjaRunInputs(1));
+      const runIntegrationDirectJit = jit(((
+        candidateInputs: RunIntegrationInputs,
+      ): JsTree<np.Array> => runIntegration(candidateInputs) as unknown as JsTree<np.Array>) as unknown as (...args: unknown[]) => JsTree<np.Array>) as unknown as typeof runIntegration;
+
       [eagerCarry, eagerOutputs] = runIntegration(inputs);
-      [jitCarry, jitOutputs] = runIntegrationJit(inputs);
+      [directJitCarry, directJitOutputs] = runIntegrationDirectJit(inputs);
 
       for (const key of [
         "gpp_avg",
@@ -284,32 +287,35 @@ describe("integration replay", () => {
         "psi",
         "et_total",
       ] as const) {
-        expect(jitOutputs[key]).toBeAllclose(eagerOutputs[key], { rtol: RTOL, atol: eps });
+        expect(directJitOutputs[key]).toBeAllclose(eagerOutputs[key], { rtol: RTOL, atol: eps });
       }
 
-      expect(jitOutputs.cstate).toBeAllclose(eagerOutputs.cstate, { rtol: RTOL, atol: eps });
+      expect(directJitOutputs.cstate).toBeAllclose(eagerOutputs.cstate, { rtol: RTOL, atol: eps });
     } finally {
-      for (const carry of [eagerCarry, jitCarry]) {
+      for (const carry of [eagerCarry, directJitCarry]) {
         if (!carry) continue;
         tree.dispose(carry);
       }
-      for (const outputs of [eagerOutputs, jitOutputs]) {
+      for (const outputs of [eagerOutputs, directJitOutputs]) {
         if (!outputs) continue;
         tree.dispose(outputs);
       }
+      if (inputs) tree.dispose(inputs as unknown as JsTree<np.Array>);
     }
   });
 
   it("allows the projected_newton alternative on a 1-day replay", { timeout: 120000 }, () => {
-    const [finalCarry, dailyOutputs] = runIntegration({
+    const inputs = prepareRunIntegrationInputs({
       ...buildQvidjaRunInputs(1),
       phydro_optimizer: "projected_newton",
     });
+    const [finalCarry, dailyOutputs] = runIntegration(inputs);
 
     try {
       expect(Number.isFinite((dailyOutputs.gpp_avg.js() as number[])[0])).toBe(true);
       expect(Number.isFinite((dailyOutputs.et_total.js() as number[])[0])).toBe(true);
     } finally {
+      tree.dispose(inputs as unknown as JsTree<np.Array>);
       finalCarry.cw_state.CanopyStorage.dispose();
       finalCarry.cw_state.SWE.dispose();
       finalCarry.cw_state.swe_i.dispose();
@@ -365,7 +371,8 @@ describe("integration replay", () => {
   it("matches the 2-day Qvidja fixture within TS float32 tolerances", { timeout: 120000 }, () => {
     const NDAYS = 2;
     const fixture = integrationFixture.integration_daily.slice(0, NDAYS);
-    const [finalCarry, dailyOutputs] = runIntegration(buildQvidjaRunInputs(NDAYS));
+    const inputs = prepareRunIntegrationInputs(buildQvidjaRunInputs(NDAYS));
+    const [finalCarry, dailyOutputs] = runIntegration(inputs);
     const scalarKeys = [
       "gpp_avg",
       "nee",
@@ -431,6 +438,7 @@ describe("integration replay", () => {
         expect(etValue).toBeGreaterThanOrEqual(0.0);
       }
     } finally {
+      tree.dispose(inputs as unknown as JsTree<np.Array>);
       finalCarry.cw_state.CanopyStorage.dispose();
       finalCarry.cw_state.SWE.dispose();
       finalCarry.cw_state.swe_i.dispose();

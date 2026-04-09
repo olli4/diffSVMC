@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { numpy as baseNp, valueAndGrad } from "@hamk-uas/jax-js-nonconsuming";
-import { initializeTotcFn } from "../src/yasso/index.js";
+import { jit, numpy as baseNp, type JsTree, valueAndGrad } from "@hamk-uas/jax-js-nonconsuming";
+import { initializeTotc, initializeTotcChecked } from "../src/yasso/index.js";
 import { getNumericDType, np } from "../src/precision.js";
 import yassoFixtures from "../../svmc-ref/fixtures/yasso.json";
 
@@ -30,7 +30,7 @@ describe("initialize_totc — Fortran reference", () => {
       using precipDay = np.array(c.inputs.precip_day as number);
       using temprAmpl = np.array(c.inputs.tempr_ampl as number);
 
-      const { cstate, nstate } = initializeTotcFn(
+      const { cstate, nstate } = initializeTotc(
         param, totc, cnInput, fractRootInput, fractLegacySoc,
         temprC, precipDay, temprAmpl,
       );
@@ -56,7 +56,7 @@ describe("initialize_totc — invariants", () => {
       using precipDay = np.array(c.inputs.precip_day as number);
       using temprAmpl = np.array(c.inputs.tempr_ampl as number);
 
-      const { cstate, nstate } = initializeTotcFn(
+      const { cstate, nstate } = initializeTotc(
         param, totc, cnInput, fractRootInput, fractLegacySoc,
         temprC, precipDay, temprAmpl,
       );
@@ -80,7 +80,7 @@ describe("initialize_totc — invariants", () => {
     using precipDay = np.array(c.inputs.precip_day as number);
     using temprAmpl = np.array(c.inputs.tempr_ampl as number);
 
-    const { cstate, nstate } = initializeTotcFn(
+    const { cstate, nstate } = initializeTotc(
       param, totc, cnInput, fractRootInput, fractLegacySoc,
       temprC, precipDay, temprAmpl,
     );
@@ -146,7 +146,7 @@ describe("initialize_totc — invariants", () => {
     using precipDay = np.array(c.inputs.precip_day as number);
     using temprAmpl = np.array(c.inputs.tempr_ampl as number);
 
-    expect(() => initializeTotcFn(
+    expect(() => initializeTotcChecked(
       param, totc, cnInput, fractRootInput, fractLegacySoc,
       temprC, precipDay, temprAmpl,
     )).toThrow(/fractRootInput must be in \[0, 1\]/);
@@ -163,7 +163,7 @@ describe("initialize_totc — invariants", () => {
     using precipDay = np.array(c.inputs.precip_day as number);
     using temprAmpl = np.array(c.inputs.tempr_ampl as number);
 
-    expect(() => initializeTotcFn(
+    expect(() => initializeTotcChecked(
       param, totc, cnInput, fractRootInput, fractLegacySoc,
       temprC, precipDay, temprAmpl,
     )).toThrow(/fractLegacySoc must be in \[0, 1\]/);
@@ -186,7 +186,7 @@ describe("initialize_totc — autodiff", () => {
     using temprAmpl = np.array(c.inputs.tempr_ampl as number);
 
     const loss = (totc: np.Array) => {
-      const { cstate, nstate } = initializeTotcFn(
+      const { cstate, nstate } = initializeTotc(
         param, totc, cnInput, fractRootInput, fractLegacySoc,
         temprC, precipDay, temprAmpl,
       );
@@ -205,5 +205,66 @@ describe("initialize_totc — autodiff", () => {
     expect(allFinite.item()).toBe(1);
     value.dispose();
     grad.dispose();
+  });
+
+  it("kernel is jit-compatible", async () => {
+    const c = yassoFixtures.initialize_totc[0];
+    using param = np.array(c.inputs.param as number[]);
+    using totc = np.array(c.inputs.totc as number);
+    using cnInput = np.array(c.inputs.cn_input as number);
+    using fractRootInput = np.array(c.inputs.fract_root_input as number);
+    using fractLegacySoc = np.array(c.inputs.fract_legacy_soc as number);
+    using temprC = np.array(c.inputs.tempr_c as number);
+    using precipDay = np.array(c.inputs.precip_day as number);
+    using temprAmpl = np.array(c.inputs.tempr_ampl as number);
+
+    const jitFn = jit(((
+      kernelParam: np.Array,
+      kernelTotc: np.Array,
+      kernelCnInput: np.Array,
+      kernelFractRootInput: np.Array,
+      kernelFractLegacySoc: np.Array,
+      kernelTemprC: np.Array,
+      kernelPrecipDay: np.Array,
+      kernelTemprAmpl: np.Array,
+    ): JsTree<np.Array> => initializeTotc(
+      kernelParam,
+      kernelTotc,
+      kernelCnInput,
+      kernelFractRootInput,
+      kernelFractLegacySoc,
+      kernelTemprC,
+      kernelPrecipDay,
+      kernelTemprAmpl,
+    ) as unknown as JsTree<np.Array>) as unknown as (...args: unknown[]) => JsTree<np.Array>) as unknown as typeof initializeTotc;
+
+    const eager = initializeTotc(
+      param,
+      totc,
+      cnInput,
+      fractRootInput,
+      fractLegacySoc,
+      temprC,
+      precipDay,
+      temprAmpl,
+    );
+    using _eagerCstate = eager.cstate;
+    using _eagerNstate = eager.nstate;
+
+    const jitted = jitFn(
+      param,
+      totc,
+      cnInput,
+      fractRootInput,
+      fractLegacySoc,
+      temprC,
+      precipDay,
+      temprAmpl,
+    );
+    using _jittedCstate = jitted.cstate;
+    using _jittedNstate = jitted.nstate;
+
+    expect(jitted.cstate).toBeAllclose(eager.cstate, { rtol: RTOL, atol: eps });
+    expect(jitted.nstate).toBeAllclose(eager.nstate, { rtol: RTOL, atol: eps });
   });
 });

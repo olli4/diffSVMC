@@ -43,6 +43,9 @@ function shouldApplyNumericDType(value: unknown, dtype: unknown): boolean {
 
 function createArrayForDType(dtype: NumericDType): typeof baseNp.array {
   return (values, options) => {
+    if (isProjectArray(values)) {
+      return values.ref as never;
+    }
     if (!shouldApplyNumericDType(values, options?.dtype)) {
       return baseNp.array(values as never, options as never);
     }

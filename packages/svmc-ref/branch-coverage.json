@@ -361,12 +361,12 @@
       "ts_tested": true,
       "jax_test": "test_initialize_totc_invalid_fract_root_input",
       "ts_test": "rejects fractRootInput outside [0, 1]",
-      "notes": "All fixture cases use fract_root_input in [0, 0.3, 0.5, 1.0] (valid range). JAX keeps initialize_totc pure for jit/grad and covers the fatal-path guard through initialize_totc_checked; TS validates at the exported entry point.",
+      "notes": "All fixture cases use fract_root_input in [0, 0.3, 0.5, 1.0] (valid range). JAX keeps initialize_totc pure for jit/grad and covers the fatal-path guard through initialize_totc_checked; TS now does the same through initializeTotcChecked at the host boundary while keeping initializeTotc pure.",
       "waiver": {
         "scope": "fixture-both-sides",
         "kind": "fatal-path",
         "approved_by": "phase-4-initialize-totc",
-        "reason": "The true arm is an error stop that terminates the Fortran program, so fixtures cannot cover it. The JAX port preserves it in a checked host wrapper while keeping initialize_totc callback-free for pure JAX workflows; TS preserves it at the exported entry point.",
+        "reason": "The true arm is an error stop that terminates the Fortran program, so fixtures cannot cover it. The JAX port preserves it in a checked host wrapper while keeping initialize_totc callback-free for pure JAX workflows; TS now does the same through initializeTotcChecked at the host boundary.",
         "safe_test_strategy": "Exercise the port-side guard with dedicated invalid-input tests while keeping fixture playback on valid Fortran cases and leaving the pure JAX kernel free of host callbacks."
       }
     },
@@ -380,12 +380,12 @@
       "ts_tested": true,
       "jax_test": "test_initialize_totc_invalid_fract_legacy_soc",
       "ts_test": "rejects fractLegacySoc outside [0, 1]",
-      "notes": "All fixture cases use fract_legacy_soc in [0, 0.5, 1.0] (valid range). JAX keeps initialize_totc pure for jit/grad and covers the fatal-path guard through initialize_totc_checked; TS validates at the exported entry point.",
+      "notes": "All fixture cases use fract_legacy_soc in [0, 0.5, 1.0] (valid range). JAX keeps initialize_totc pure for jit/grad and covers the fatal-path guard through initialize_totc_checked; TS now does the same through initializeTotcChecked at the host boundary while keeping initializeTotc pure.",
       "waiver": {
         "scope": "fixture-both-sides",
         "kind": "fatal-path",
         "approved_by": "phase-4-initialize-totc",
-        "reason": "The true arm is an error stop that terminates the Fortran program, so fixtures cannot cover it. The JAX port preserves it in a checked host wrapper while keeping initialize_totc callback-free for pure JAX workflows; TS preserves it at the exported entry point.",
+        "reason": "The true arm is an error stop that terminates the Fortran program, so fixtures cannot cover it. The JAX port preserves it in a checked host wrapper while keeping initialize_totc callback-free for pure JAX workflows; TS now does the same through initializeTotcChecked at the host boundary.",
         "safe_test_strategy": "Exercise the port-side guard with dedicated invalid-input tests while keeping fixture playback on valid Fortran cases and leaving the pure JAX kernel free of host callbacks."
       }
     },

@@ -1,4 +1,4 @@
-import { jit, lax, tree, type JsTree } from "@hamk-uas/jax-js-nonconsuming";
+import { lax, tree, type JsTree } from "@hamk-uas/jax-js-nonconsuming";
 import { np, retainArray } from "./precision.js";
 import { allocHypothesis2Fn, invertAllocFn } from "./allocation/index.js";
 import { densityH2o, pmodelHydraulicsNumerical } from "./phydro/index.js";
@@ -13,7 +13,7 @@ import {
   type SpafhyAeroParams,
 } from "./water/index.js";
 import type { SoilHydroParams } from "./water/soil-hydraulics.js";
-import { decomposeFn, initializeTotcFn, inputsToFractions } from "./yasso/index.js";
+import { decomposeFn, initializeTotc, inputsToFractions } from "./yasso/index.js";
 
 const C_MOLMASS = 12.0107;
 const H2O_MOLMASS = 18.01528;
@@ -24,68 +24,77 @@ const ALPHA_SMOOTH1 = 0.01;
 const ALPHA_SMOOTH2 = 0.0016;
 const LAI_GUARD = 1.0e-6;
 
-export interface RunIntegrationInputs {
-  hourly_temp: np.ArrayLike;
-  hourly_rg: np.ArrayLike;
-  hourly_prec: np.ArrayLike;
-  hourly_vpd: np.ArrayLike;
-  hourly_pres: np.ArrayLike;
-  hourly_co2: np.ArrayLike;
-  hourly_wind: np.ArrayLike;
-  daily_lai: np.ArrayLike;
-  daily_manage_type: np.ArrayLike;
-  daily_manage_c_in: np.ArrayLike;
-  daily_manage_c_out: np.ArrayLike;
-  conductivity: np.ArrayLike;
-  psi50: np.ArrayLike;
-  b_param: np.ArrayLike;
-  alpha_cost: np.ArrayLike;
-  gamma_cost: np.ArrayLike;
-  rdark: np.ArrayLike;
-  soil_depth: np.ArrayLike;
-  max_poros: np.ArrayLike;
-  fc: np.ArrayLike;
-  wp: np.ArrayLike;
-  ksat: np.ArrayLike;
-  n_van: np.ArrayLike;
-  watres: np.ArrayLike;
-  alpha_van: np.ArrayLike;
-  watsat: np.ArrayLike;
-  maxpond: np.ArrayLike;
-  wmax: np.ArrayLike;
-  wmaxsnow: np.ArrayLike;
-  kmelt: np.ArrayLike;
-  kfreeze: np.ArrayLike;
-  frac_snowliq: np.ArrayLike;
-  gsoil: np.ArrayLike;
-  hc: np.ArrayLike;
-  w_leaf: np.ArrayLike;
-  rw: np.ArrayLike;
-  rwmin: np.ArrayLike;
-  zmeas: np.ArrayLike;
-  zground: np.ArrayLike;
-  zo_ground: np.ArrayLike;
-  cratio_resp: np.ArrayLike;
-  cratio_leaf: np.ArrayLike;
-  cratio_root: np.ArrayLike;
-  cratio_biomass: np.ArrayLike;
-  harvest_index: np.ArrayLike;
-  turnover_cleaf: np.ArrayLike;
-  turnover_croot: np.ArrayLike;
-  sla: np.ArrayLike;
-  q10: np.ArrayLike;
-  invert_option: np.ArrayLike;
-  pft_is_oat: np.ArrayLike;
-  yasso_param: np.ArrayLike;
-  yasso_totc: np.ArrayLike;
-  yasso_cn_input: np.ArrayLike;
-  yasso_fract_root: np.ArrayLike;
-  yasso_fract_legacy: np.ArrayLike;
-  yasso_tempr_c: np.ArrayLike;
-  yasso_precip_day: np.ArrayLike;
-  yasso_tempr_ampl: np.ArrayLike;
-  phydro_optimizer?: string;
+interface RunIntegrationNumericInputs<TArray> {
+  hourly_temp: TArray;
+  hourly_rg: TArray;
+  hourly_prec: TArray;
+  hourly_vpd: TArray;
+  hourly_pres: TArray;
+  hourly_co2: TArray;
+  hourly_wind: TArray;
+  daily_lai: TArray;
+  daily_manage_type: TArray;
+  daily_manage_c_in: TArray;
+  daily_manage_c_out: TArray;
+  conductivity: TArray;
+  psi50: TArray;
+  b_param: TArray;
+  alpha_cost: TArray;
+  gamma_cost: TArray;
+  rdark: TArray;
+  soil_depth: TArray;
+  max_poros: TArray;
+  fc: TArray;
+  wp: TArray;
+  ksat: TArray;
+  n_van: TArray;
+  watres: TArray;
+  alpha_van: TArray;
+  watsat: TArray;
+  maxpond: TArray;
+  wmax: TArray;
+  wmaxsnow: TArray;
+  kmelt: TArray;
+  kfreeze: TArray;
+  frac_snowliq: TArray;
+  gsoil: TArray;
+  hc: TArray;
+  w_leaf: TArray;
+  rw: TArray;
+  rwmin: TArray;
+  zmeas: TArray;
+  zground: TArray;
+  zo_ground: TArray;
+  cratio_resp: TArray;
+  cratio_leaf: TArray;
+  cratio_root: TArray;
+  cratio_biomass: TArray;
+  harvest_index: TArray;
+  turnover_cleaf: TArray;
+  turnover_croot: TArray;
+  sla: TArray;
+  q10: TArray;
+  invert_option: TArray;
+  pft_is_oat: TArray;
+  yasso_param: TArray;
+  yasso_totc: TArray;
+  yasso_cn_input: TArray;
+  yasso_fract_root: TArray;
+  yasso_fract_legacy: TArray;
+  yasso_tempr_c: TArray;
+  yasso_precip_day: TArray;
+  yasso_tempr_ampl: TArray;
 }
+
+export type RunIntegrationInputs = RunIntegrationNumericInputs<np.Array> & {
+  phydro_optimizer?: string;
+};
+
+type RunIntegrationInputValue = np.Array | number | number[] | number[][];
+
+export type RunIntegrationInputLike = RunIntegrationNumericInputs<RunIntegrationInputValue> & {
+  phydro_optimizer?: string;
+};
 
 interface HourlyCarry {
   cw_state: CanopyWaterState;
@@ -218,11 +227,6 @@ type ScanDailySequenceFn = (
   daily_forcing: DailyForcing,
 ) => ScanDailySequenceResult;
 
-type ScanDailySequenceRunnerFactory = (
-  ndays: number,
-  daily_step: (carry: DailyCarry, forcing: DailyForcing) => [DailyCarry, DailyOutput],
-) => ScanDailySequenceFn;
-
 interface DailyBoundaryOutput<TValue, TVector> {
   gpp_avg: TValue;
   nee: TValue;
@@ -338,13 +342,85 @@ interface ScanDailyStepResources {
   gamma_cost: np.Array;
 }
 
-function leadingLength(value: np.ArrayLike): number {
-  if (Array.isArray(value)) return value.length;
+function leadingLength(value: np.Array): number {
   const maybeShape = value as { shape?: number[] };
   if (Array.isArray(maybeShape.shape) && maybeShape.shape.length > 0) {
     return maybeShape.shape[0];
   }
   throw new TypeError("Unable to infer leading dimension for integration inputs");
+}
+
+function refInput(value: np.Array): np.Array {
+  return value.ref;
+}
+
+function materializeInput(value: RunIntegrationInputValue): np.Array {
+  return retainArray(value as np.ArrayLike);
+}
+
+export function prepareRunIntegrationInputs(inputs: RunIntegrationInputLike): RunIntegrationInputs {
+  return {
+    hourly_temp: materializeInput(inputs.hourly_temp),
+    hourly_rg: materializeInput(inputs.hourly_rg),
+    hourly_prec: materializeInput(inputs.hourly_prec),
+    hourly_vpd: materializeInput(inputs.hourly_vpd),
+    hourly_pres: materializeInput(inputs.hourly_pres),
+    hourly_co2: materializeInput(inputs.hourly_co2),
+    hourly_wind: materializeInput(inputs.hourly_wind),
+    daily_lai: materializeInput(inputs.daily_lai),
+    daily_manage_type: materializeInput(inputs.daily_manage_type),
+    daily_manage_c_in: materializeInput(inputs.daily_manage_c_in),
+    daily_manage_c_out: materializeInput(inputs.daily_manage_c_out),
+    conductivity: materializeInput(inputs.conductivity),
+    psi50: materializeInput(inputs.psi50),
+    b_param: materializeInput(inputs.b_param),
+    alpha_cost: materializeInput(inputs.alpha_cost),
+    gamma_cost: materializeInput(inputs.gamma_cost),
+    rdark: materializeInput(inputs.rdark),
+    soil_depth: materializeInput(inputs.soil_depth),
+    max_poros: materializeInput(inputs.max_poros),
+    fc: materializeInput(inputs.fc),
+    wp: materializeInput(inputs.wp),
+    ksat: materializeInput(inputs.ksat),
+    n_van: materializeInput(inputs.n_van),
+    watres: materializeInput(inputs.watres),
+    alpha_van: materializeInput(inputs.alpha_van),
+    watsat: materializeInput(inputs.watsat),
+    maxpond: materializeInput(inputs.maxpond),
+    wmax: materializeInput(inputs.wmax),
+    wmaxsnow: materializeInput(inputs.wmaxsnow),
+    kmelt: materializeInput(inputs.kmelt),
+    kfreeze: materializeInput(inputs.kfreeze),
+    frac_snowliq: materializeInput(inputs.frac_snowliq),
+    gsoil: materializeInput(inputs.gsoil),
+    hc: materializeInput(inputs.hc),
+    w_leaf: materializeInput(inputs.w_leaf),
+    rw: materializeInput(inputs.rw),
+    rwmin: materializeInput(inputs.rwmin),
+    zmeas: materializeInput(inputs.zmeas),
+    zground: materializeInput(inputs.zground),
+    zo_ground: materializeInput(inputs.zo_ground),
+    cratio_resp: materializeInput(inputs.cratio_resp),
+    cratio_leaf: materializeInput(inputs.cratio_leaf),
+    cratio_root: materializeInput(inputs.cratio_root),
+    cratio_biomass: materializeInput(inputs.cratio_biomass),
+    harvest_index: materializeInput(inputs.harvest_index),
+    turnover_cleaf: materializeInput(inputs.turnover_cleaf),
+    turnover_croot: materializeInput(inputs.turnover_croot),
+    sla: materializeInput(inputs.sla),
+    q10: materializeInput(inputs.q10),
+    invert_option: materializeInput(inputs.invert_option),
+    pft_is_oat: materializeInput(inputs.pft_is_oat),
+    yasso_param: materializeInput(inputs.yasso_param),
+    yasso_totc: materializeInput(inputs.yasso_totc),
+    yasso_cn_input: materializeInput(inputs.yasso_cn_input),
+    yasso_fract_root: materializeInput(inputs.yasso_fract_root),
+    yasso_fract_legacy: materializeInput(inputs.yasso_fract_legacy),
+    yasso_tempr_c: materializeInput(inputs.yasso_tempr_c),
+    yasso_precip_day: materializeInput(inputs.yasso_precip_day),
+    yasso_tempr_ampl: materializeInput(inputs.yasso_tempr_ampl),
+    phydro_optimizer: inputs.phydro_optimizer,
+  };
 }
 
 function resolveSolverKind(phydro_optimizer?: string): SolverKind {
@@ -368,13 +444,13 @@ function createScanDailyStepResources(
   >,
   solverKind: SolverKind,
 ): ScanDailyStepResources {
-  const max_poros = np.array(inputs.max_poros);
-  const rdark = np.array(inputs.rdark);
-  const conductivity = np.array(inputs.conductivity);
-  const psi50 = np.array(inputs.psi50);
-  const b_param = np.array(inputs.b_param);
-  const alpha_cost = np.array(inputs.alpha_cost);
-  const gamma_cost = np.array(inputs.gamma_cost);
+  const max_poros = refInput(inputs.max_poros);
+  const rdark = refInput(inputs.rdark);
+  const conductivity = refInput(inputs.conductivity);
+  const psi50 = refInput(inputs.psi50);
+  const b_param = refInput(inputs.b_param);
+  const alpha_cost = refInput(inputs.alpha_cost);
+  const gamma_cost = refInput(inputs.gamma_cost);
 
   return {
     max_poros,
@@ -484,28 +560,6 @@ function makeScanDailySequence(
     daily_forcing,
     ndays,
     daily_step,
-  );
-}
-
-function makeJittedScanDailySequence(
-  ndays: number,
-  daily_step: (carry: DailyCarry, forcing: DailyForcing) => [DailyCarry, DailyOutput],
-): ScanDailySequenceFn {
-  const runSequence = jit(((
-    daily_init: DailyCarry,
-    daily_forcing: DailyForcing,
-  ): JsTree<np.Array> => executeScanDailySequence(
-    daily_init,
-    daily_forcing,
-    ndays,
-    daily_step,
-  ) as unknown as JsTree<np.Array>) as unknown as (...args: unknown[]) => JsTree<np.Array>) as unknown as (
-    daily_init: DailyCarry,
-    daily_forcing: DailyForcing,
-  ) => ScanDailySequenceResult;
-
-  return (daily_init: DailyCarry, daily_forcing: DailyForcing): ScanDailySequenceResult => (
-    runSequence(daily_init, daily_forcing)
   );
 }
 
@@ -827,40 +881,40 @@ function createSharedIntegrationResources(
   inputs: RunIntegrationInputs,
 ): SharedIntegrationResources {
   const soil_params = tree.makeDisposable({
-    watsat: np.array(inputs.watsat),
-    watres: np.array(inputs.watres),
-    alphaVan: np.array(inputs.alpha_van),
-    nVan: np.array(inputs.n_van),
-    ksat: np.array(inputs.ksat),
+    watsat: refInput(inputs.watsat),
+    watres: refInput(inputs.watres),
+    alphaVan: refInput(inputs.alpha_van),
+    nVan: refInput(inputs.n_van),
+    ksat: refInput(inputs.ksat),
   }) as SoilHydroParams;
   const aero_params = tree.makeDisposable({
-    hc: np.array(inputs.hc),
-    zmeas: np.array(inputs.zmeas),
-    zground: np.array(inputs.zground),
-    zo_ground: np.array(inputs.zo_ground),
-    w_leaf: np.array(inputs.w_leaf),
+    hc: refInput(inputs.hc),
+    zmeas: refInput(inputs.zmeas),
+    zground: refInput(inputs.zground),
+    zo_ground: refInput(inputs.zo_ground),
+    w_leaf: refInput(inputs.w_leaf),
   }) as SpafhyAeroParams;
   const cs_params = tree.makeDisposable({
-    wmax: np.array(inputs.wmax),
-    wmaxsnow: np.array(inputs.wmaxsnow),
-    kmelt: np.array(inputs.kmelt),
-    kfreeze: np.array(inputs.kfreeze),
-    fracSnowliq: np.array(inputs.frac_snowliq),
-    gsoil: np.array(inputs.gsoil),
+    wmax: refInput(inputs.wmax),
+    wmaxsnow: refInput(inputs.wmaxsnow),
+    kmelt: refInput(inputs.kmelt),
+    kfreeze: refInput(inputs.kfreeze),
+    fracSnowliq: refInput(inputs.frac_snowliq),
+    gsoil: refInput(inputs.gsoil),
   }) as CanopySnowParams;
-  const yasso_param = np.array(inputs.yasso_param);
+  const yasso_param = refInput(inputs.yasso_param);
   const allocation_params = tree.makeDisposable({
-    cratio_resp: np.array(inputs.cratio_resp),
-    cratio_leaf: np.array(inputs.cratio_leaf),
-    cratio_root: np.array(inputs.cratio_root),
-    cratio_biomass: np.array(inputs.cratio_biomass),
-    harvest_index: np.array(inputs.harvest_index),
-    turnover_cleaf: np.array(inputs.turnover_cleaf),
-    turnover_croot: np.array(inputs.turnover_croot),
-    sla: np.array(inputs.sla),
-    q10: np.array(inputs.q10),
-    invert_option: np.array(inputs.invert_option),
-    pft_is_oat: np.array(inputs.pft_is_oat),
+    cratio_resp: refInput(inputs.cratio_resp),
+    cratio_leaf: refInput(inputs.cratio_leaf),
+    cratio_root: refInput(inputs.cratio_root),
+    cratio_biomass: refInput(inputs.cratio_biomass),
+    harvest_index: refInput(inputs.harvest_index),
+    turnover_cleaf: refInput(inputs.turnover_cleaf),
+    turnover_croot: refInput(inputs.turnover_croot),
+    sla: refInput(inputs.sla),
+    q10: refInput(inputs.q10),
+    invert_option: refInput(inputs.invert_option),
+    pft_is_oat: refInput(inputs.pft_is_oat),
   }) as AllocationParams;
 
   const [initial_cw_state, initial_sw_state] = initializationSpafhy(
@@ -871,14 +925,14 @@ function createSharedIntegrationResources(
     soil_params,
   );
 
-  using yasso_totc = np.array(inputs.yasso_totc);
-  using yasso_cn_input = np.array(inputs.yasso_cn_input);
-  using yasso_fract_root = np.array(inputs.yasso_fract_root);
-  using yasso_fract_legacy = np.array(inputs.yasso_fract_legacy);
-  using yasso_tempr_c = np.array(inputs.yasso_tempr_c);
-  using yasso_precip_day = np.array(inputs.yasso_precip_day);
-  using yasso_tempr_ampl = np.array(inputs.yasso_tempr_ampl);
-  const yasso_init = initializeTotcFn(
+  using yasso_totc = refInput(inputs.yasso_totc);
+  using yasso_cn_input = refInput(inputs.yasso_cn_input);
+  using yasso_fract_root = refInput(inputs.yasso_fract_root);
+  using yasso_fract_legacy = refInput(inputs.yasso_fract_legacy);
+  using yasso_tempr_c = refInput(inputs.yasso_tempr_c);
+  using yasso_precip_day = refInput(inputs.yasso_precip_day);
+  using yasso_tempr_ampl = refInput(inputs.yasso_tempr_ampl);
+  const yasso_init = initializeTotc(
     yasso_param,
     yasso_totc,
     yasso_cn_input,
@@ -917,9 +971,8 @@ function withSharedIntegrationResources<TResult>(
   }
 }
 
-function runIntegrationWithRunnerFactory(
+function runPreparedIntegration(
   inputs: RunIntegrationInputs,
-  runnerFactory: ScanDailySequenceRunnerFactory,
 ): IntegrationResult {
   return withSharedIntegrationResources(inputs, (context) => {
     const executionResources = createScanDailyStepResources(
@@ -933,7 +986,7 @@ function runIntegrationWithRunnerFactory(
       return runScanDailySequenceWithRunner(
         inputs,
         initialState,
-        runnerFactory(context.ndays, executionResources.daily_step),
+        makeScanDailySequence(context.ndays, executionResources.daily_step),
       );
     } finally {
       disposeScanDailyStepResources(executionResources);
@@ -943,17 +996,17 @@ function runIntegrationWithRunnerFactory(
 
 function createTracedDailyForcing(inputs: RunIntegrationInputs): DailyForcing {
   return {
-    hourly_temp: np.array(inputs.hourly_temp),
-    hourly_rg: np.array(inputs.hourly_rg),
-    hourly_prec: np.array(inputs.hourly_prec),
-    hourly_vpd: np.array(inputs.hourly_vpd),
-    hourly_pres: np.array(inputs.hourly_pres),
-    hourly_co2: np.array(inputs.hourly_co2),
-    hourly_wind: np.array(inputs.hourly_wind),
-    lai: np.array(inputs.daily_lai),
-    management_type: np.array(inputs.daily_manage_type),
-    management_c_in: np.array(inputs.daily_manage_c_in),
-    management_c_out: np.array(inputs.daily_manage_c_out),
+    hourly_temp: refInput(inputs.hourly_temp),
+    hourly_rg: refInput(inputs.hourly_rg),
+    hourly_prec: refInput(inputs.hourly_prec),
+    hourly_vpd: refInput(inputs.hourly_vpd),
+    hourly_pres: refInput(inputs.hourly_pres),
+    hourly_co2: refInput(inputs.hourly_co2),
+    hourly_wind: refInput(inputs.hourly_wind),
+    lai: refInput(inputs.daily_lai),
+    management_type: refInput(inputs.daily_manage_type),
+    management_c_in: refInput(inputs.daily_manage_c_in),
+    management_c_out: refInput(inputs.daily_manage_c_out),
   };
 }
 
@@ -1528,9 +1581,5 @@ function makeDailyStep(
 }
 
 export function runIntegration(inputs: RunIntegrationInputs): IntegrationResult {
-  return runIntegrationWithRunnerFactory(inputs, makeScanDailySequence);
-}
-
-export function runIntegrationJit(inputs: RunIntegrationInputs): IntegrationResult {
-  return runIntegrationWithRunnerFactory(inputs, makeJittedScanDailySequence);
+  return runPreparedIntegration(inputs);
 }

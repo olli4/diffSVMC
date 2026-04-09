@@ -38,7 +38,7 @@ function el(arr: np.Array, i: number): np.Array {
   return arr.slice(i);
 }
 
-function requireUnitInterval(name: string, value: np.Array): void {
+function requireUnitIntervalChecked(name: string, value: np.Array): void {
   const scalar = value.item() as number;
   if (scalar < 0.0 || scalar > 1.0) {
     throw new RangeError(`${name} must be in [0, 1], got ${scalar}`);
@@ -225,19 +225,10 @@ function evalSteadystateNitr(
  * Note: In the current Fortran parameterisation, awenh_fineroot == awenh_leaf,
  * so fract_root_input has no effect.
  *
- * @param param - Parameter vector (35,).
- * @param totc - Total carbon pool (scalar).
- * @param cnInput - C:N ratio of steady-state input (scalar).
- * @param fractRootInput - Fraction of input C with fineroot composition [0,1] (scalar).
- *   Precondition: must be in [0,1]. Replaces Fortran error_stop guard.
- * @param fractLegacySoc - Legacy carbon fraction [0,1] (scalar).
- *   Precondition: must be in [0,1]. Replaces Fortran error_stop guard.
- * @param temprC - Mean annual temperature (deg C) (scalar).
- * @param precipDay - Precipitation (mm/day) (scalar).
- * @param temprAmpl - Temperature yearly amplitude (deg C) (scalar).
- * @returns { cstate, nstate } - AWENH carbon (5,) and nitrogen (scalar). Caller disposes.
+ * Pure traced compute kernel. Callers that need eager host-side validation
+ * should use initializeTotcChecked instead of calling this function directly.
  */
-export function initializeTotcFn(
+export function initializeTotc(
   param: np.Array,
   totc: np.Array,
   cnInput: np.Array,
@@ -247,9 +238,6 @@ export function initializeTotcFn(
   precipDay: np.Array,
   temprAmpl: np.Array,
 ): { cstate: np.Array; nstate: np.Array } {
-  requireUnitInterval("fractRootInput", fractRootInput);
-  requireUnitInterval("fractLegacySoc", fractLegacySoc);
-
   // Build matrix from mean temperature
   using precipYr = precipDay.mul(DAYS_YR);
   using matrix = evaluateMatrixMeanTempr(param, temprC, precipYr, temprAmpl);
@@ -309,4 +297,35 @@ export function initializeTotcFn(
   const nstate = _legacyN.add(_eqN);
 
   return { cstate, nstate };
+}
+
+/**
+ * Validated eager wrapper for initializeTotc.
+ *
+ * This mirrors the Fortran input-range guards for host scalar callers and is
+ * intentionally not tracing-friendly because it extracts JS scalars via item().
+ */
+export function initializeTotcChecked(
+  param: np.Array,
+  totc: np.Array,
+  cnInput: np.Array,
+  fractRootInput: np.Array,
+  fractLegacySoc: np.Array,
+  temprC: np.Array,
+  precipDay: np.Array,
+  temprAmpl: np.Array,
+): { cstate: np.Array; nstate: np.Array } {
+  requireUnitIntervalChecked("fractRootInput", fractRootInput);
+  requireUnitIntervalChecked("fractLegacySoc", fractLegacySoc);
+
+  return initializeTotc(
+    param,
+    totc,
+    cnInput,
+    fractRootInput,
+    fractLegacySoc,
+    temprC,
+    precipDay,
+    temprAmpl,
+  );
 }
