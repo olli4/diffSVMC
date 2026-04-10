@@ -8,12 +8,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "types": ["node"],
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "dist",
-    "rootDir": "src",
     "lib": ["ES2022", "ESNext.Disposable"]
   },
+  "files": ["vitest.config.ts", "website/vite.config.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

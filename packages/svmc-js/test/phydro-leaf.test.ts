@@ -403,7 +403,6 @@ describe("P-Hydro solver — Fortran reference", () => {
       expect(Number.isFinite(values[0])).toBe(true);
       expect(values[0]).toBeGreaterThan(0.0);
     } finally {
-      clearCaches();
       parEnv.viscosityWater.dispose();
       parEnv.densityWater.dispose();
       parPhotosynth.kmm.dispose();

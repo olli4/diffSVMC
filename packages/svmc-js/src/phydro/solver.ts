@@ -1,4 +1,4 @@
-import { grad, hessian, jit, lax, tree } from "@hamk-uas/jax-js-nonconsuming";
+import { grad, hessian, lax, tree } from "@hamk-uas/jax-js-nonconsuming";
 import { np, retainArray } from "../precision.js";
 import { fnProfit } from "./fn-profit.js";
 import { calcGs } from "./calc-gs.js";
@@ -240,7 +240,7 @@ function projectedNewtonSolveImpl(
     parEnv,
   );
 
-  const body = (_i: np.Array, carry: NewtonCarry): NewtonCarry => {
+  const step = (carry: NewtonCarry): NewtonCarry => {
     using fCur = objAt(carry.x);
     using gradX = grad(objAt)(carry.x);
     using hessX = hessian(objAt)(carry.x);
@@ -271,11 +271,26 @@ function projectedNewtonSolveImpl(
     x: np.array([4.0, 1.0]),
     lam: np.array(LM_INIT),
   };
-  const result = lax.foriLoop(0, NEWTON_MAXITER, body, initCarry);
+  const scanBody = (carry: NewtonCarry, _i: np.Array): [NewtonCarry, np.Array] => {
+    const next = step(carry);
+    return [next, next.lam.ref];
+  };
+  using stepIds = np.arange(NEWTON_MAXITER);
+  const [result, lmHistory] = lax.scan(
+    scanBody as unknown as (
+      carry: NewtonCarry,
+      forcing: np.Array,
+    ) => [NewtonCarry, np.Array],
+    initCarry,
+    stepIds,
+    { length: NEWTON_MAXITER },
+  ) as unknown as [NewtonCarry, np.Array];
+  lmHistory.dispose();
+  const finalX = result.x.ref;
   if (result.x !== initCarry.x) initCarry.x.dispose();
   if (result.lam !== initCarry.lam) initCarry.lam.dispose();
-  result.lam.dispose();
-  return result.x;
+  tree.dispose(result);
+  return finalX;
 }
 
 function lbfgsDirection(
@@ -466,7 +481,7 @@ function lbfgsSolveFromStartImpl(
     validHist: np.zeros([MEMORY], { dtype: np.bool }),
   };
 
-  const body = (_i: np.Array, carry: LbfgsCarry): LbfgsCarry => {
+  const step = (carry: LbfgsCarry): LbfgsCarry => {
     using fCur = objAt(carry.x);
     using gCur = grad(objAt)(carry.x);
     using free = freeMask(carry.x, gCur);
@@ -488,7 +503,7 @@ function lbfgsSolveFromStartImpl(
     const best = evaluateCandidates(candidates, objAt);
     using threshold = fCur.sub(1e-14);
     using improved = best.value.less(threshold);
-    const xNext = np.where(improved, best.x, carry.x);
+    using xNext = np.where(improved, best.x, carry.x);
     using gNext = grad(objAt)(xNext);
     using stepVec = xNext.sub(carry.x);
     using yVec = gNext.sub(gCur);
@@ -514,12 +529,30 @@ function lbfgsSolveFromStartImpl(
     };
   };
 
-  const result = lax.foriLoop(0, MAXITER, body, initState);
-  result.sHist.dispose();
-  result.yHist.dispose();
-  result.rhoHist.dispose();
-  result.validHist.dispose();
-  return result.x;
+  const scanBody = (carry: LbfgsCarry, i: np.Array): [LbfgsCarry, np.Array] => {
+    const next = step(carry);
+    using marker = np.array(0.0, { dtype: next.x.dtype });
+    return [next, marker.ref];
+  };
+  using stepIds = np.arange(MAXITER);
+  const [result, xHistory] = lax.scan(
+    scanBody as unknown as (
+      carry: LbfgsCarry,
+      forcing: np.Array,
+    ) => [LbfgsCarry, np.Array],
+    initState,
+    stepIds,
+    { length: MAXITER },
+  ) as unknown as [LbfgsCarry, np.Array];
+  xHistory.dispose();
+  const finalX = result.x.ref;
+  if (result.x !== initState.x) initState.x.dispose();
+  if (result.sHist !== initState.sHist) initState.sHist.dispose();
+  if (result.yHist !== initState.yHist) initState.yHist.dispose();
+  if (result.rhoHist !== initState.rhoHist) initState.rhoHist.dispose();
+  if (result.validHist !== initState.validHist) initState.validHist.dispose();
+  tree.dispose(result);
+  return finalX;
 }
 
 function projectedNewtonPolishImpl(
@@ -570,7 +603,7 @@ function projectedNewtonPolishImpl(
     parEnv,
   );
 
-  const body = (_i: np.Array, x: np.Array): np.Array => {
+  const step = (x: np.Array): np.Array => {
     using fCur = objAt(x);
     using gCur = grad(objAt)(x);
     using free = freeMask(x, gCur);
@@ -580,6 +613,7 @@ function projectedNewtonPolishImpl(
     using freeRow = free.reshape([1, 2]);
     using maskedBase = hessX.mul(freeCol).mul(freeRow);
     using invFree = np.array(1.0).sub(free);
+
     using diagAdd = eye.mul(invFree.reshape([2, 1]));
     using maskedHess = maskedBase.add(diagAdd).add(eye.mul(HESS_REG));
     using maskedGrad = gCur.mul(free);
@@ -589,7 +623,7 @@ function projectedNewtonPolishImpl(
     using newtonFinite = np.all(np.isfinite(newtonDir));
     using newtonDescent = dot2(newtonDir, maskedGrad).less(0.0);
     using newtonOk = newtonFinite.mul(newtonDescent);
-    const direction = np.where(newtonOk, newtonDir, gradDir);
+    using direction = np.where(newtonOk, newtonDir, gradDir);
 
     const candidates = STEP_SIZES.map((stepSize) => {
       using scaledDir = direction.mul(stepSize);
@@ -600,13 +634,31 @@ function projectedNewtonPolishImpl(
     const best = evaluateCandidates(candidates, objAt);
     using threshold = fCur.sub(1e-14);
     using improved = best.value.less(threshold);
-    const xNext = np.where(improved, best.x, x);
+    using xNext = np.where(improved, best.x, x);
     best.x.dispose();
     best.value.dispose();
-    return xNext;
+    return xNext.ref;
   };
 
-  return lax.foriLoop(0, POLISH_ITERS, body, start.ref);
+  const scanBody = (x: np.Array, _i: np.Array): [np.Array, np.Array] => {
+    const next = step(x);
+    using marker = np.array(0.0, { dtype: next.dtype });
+    return [next, marker.ref];
+  };
+  using stepIds = np.arange(POLISH_ITERS);
+  const [result, path] = lax.scan(
+    scanBody as unknown as (
+      carry: np.Array,
+      forcing: np.Array,
+    ) => [np.Array, np.Array],
+    start,
+    stepIds,
+    { length: POLISH_ITERS },
+  ) as unknown as [np.Array, np.Array];
+  path.dispose();
+  const finalX = result.ref;
+  result.dispose();
+  return finalX;
 }
 
 function lbfgsSolveImpl(
@@ -704,12 +756,29 @@ function lbfgsSolveImpl(
     parEnv,
   );
 
-  const candidates = polishedStarts.map((candidate) => candidate.ref);
-  const best = evaluateCandidates(candidates, objAt);
-  return best.x;
-}
+  const safeVals = polishedStarts.map((candidate) => {
+    using value = objAt(candidate);
+    using finite = np.isfinite(value);
+    return np.where(finite, value, np.inf);
+  });
 
-const lbfgsSolve = jit(lbfgsSolveImpl);
+  let bestX = polishedStarts[0].ref;
+  let bestVal = safeVals[0].ref;
+  for (let idx = 1; idx < polishedStarts.length; idx += 1) {
+    using better = safeVals[idx].less(bestVal);
+    using nextX = np.where(better, polishedStarts[idx], bestX);
+    using nextVal = np.where(better, safeVals[idx], bestVal);
+    bestX.dispose();
+    bestVal.dispose();
+    bestX = nextX.ref;
+    bestVal = nextVal.ref;
+  }
+
+  for (const candidate of polishedStarts) candidate.dispose();
+  for (const value of safeVals) value.dispose();
+  bestVal.dispose();
+  return bestX;
+}
 
 function optimiseMidtermMultiLbfgsFlat(
   psiSoil: np.Array,
@@ -731,7 +800,7 @@ function optimiseMidtermMultiLbfgsFlat(
   tc: np.Array,
   vpd: np.Array,
 ): np.Array {
-  const result = lbfgsSolve(
+  const result = lbfgsSolveImpl(
     psiSoil,
     alpha,
     gamma,
@@ -754,8 +823,6 @@ function optimiseMidtermMultiLbfgsFlat(
   return result;
 }
 
-const projectedNewtonSolve = jit(projectedNewtonSolveImpl);
-
 function optimiseMidtermMultiNewtonFlat(
   psiSoil: np.Array,
   alpha: np.Array,
@@ -776,7 +843,7 @@ function optimiseMidtermMultiNewtonFlat(
   tc: np.Array,
   vpd: np.Array,
 ): np.Array {
-  const result = projectedNewtonSolve(
+  const result = projectedNewtonSolveImpl(
     psiSoil,
     alpha,
     gamma,

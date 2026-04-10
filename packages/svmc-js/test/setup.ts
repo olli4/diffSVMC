@@ -1,5 +1,6 @@
 import {
   checkLeaks,
+  clearCaches,
   devices,
   getBackend,
 } from "@hamk-uas/jax-js-nonconsuming";
@@ -11,6 +12,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearCaches();
   const result = checkLeaks.stop();
   expect(result.leaked, result.summary).toBe(0);
 });

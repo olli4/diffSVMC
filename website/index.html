@@ -10,6 +10,7 @@
   --bg: #f8f9fa; --card: #fff; --border: #dee2e6;
   --text: #212529; --muted: #6c757d; --accent: #0d6efd;
   --ok: #198754; --warn: #fd7e14;
+  --webr: #d9485f; --jax: #2f6f9f;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -34,6 +35,64 @@ details summary {
 details[open] summary { color: var(--text); }
 label { display: flex; justify-content: space-between; align-items: center;
   font-size: .8rem; margin-bottom: .25rem; }
+.engine-option {
+  justify-content: space-between;
+  gap: .75rem;
+  align-items: flex-start;
+  padding: .35rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: .4rem;
+  margin-bottom: .45rem;
+}
+.engine-option input[type=checkbox] {
+  margin-right: .45rem;
+  transform: translateY(.1rem);
+}
+.engine-option-main {
+  display: flex;
+  align-items: flex-start;
+  gap: .45rem;
+  flex: 1;
+}
+.engine-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+}
+.engine-option-copy strong { font-size: .82rem; }
+.engine-option-copy span { color: var(--muted); font-size: .72rem; }
+.engine-timing {
+  font-variant-numeric: tabular-nums;
+  font-size: .74rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.engine-timing[data-state="done"] { color: var(--text); }
+.engine-timing[data-state="running"] { color: var(--warn); }
+.engine-timing[data-state="error"] { color: #dc3545; }
+.engine-settings {
+  margin: -.1rem 0 .55rem 2rem;
+  padding: .45rem .55rem .25rem;
+  border-left: 2px solid var(--border);
+}
+.engine-settings.is-disabled {
+  opacity: .6;
+}
+.engine-setting-row {
+  font-size: .74rem;
+  margin-bottom: .35rem;
+}
+.engine-setting-row input[type=checkbox] {
+  width: auto;
+}
+.engine-setting-row select {
+  width: 8.5rem;
+}
+.engine-setting-help {
+  color: var(--muted);
+  font-size: .7rem;
+  margin: .1rem 0 0;
+}
 input[type=number], select {
   width: 7.5rem; padding: .15rem .3rem; border: 1px solid var(--border);
   border-radius: .25rem; font-size: .8rem; text-align: right;
@@ -52,11 +111,101 @@ button {
 #status.loading { background: #fff3cd; }
 #status.ok { background: #d1e7dd; }
 #status.err { background: #f8d7da; }
-.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
-@media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+.debug-panel {
+  margin: .75rem 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  background: #fbfcfd;
+}
+.debug-panel summary {
+  padding: .6rem .8rem;
+}
+.debug-panel-body {
+  border-top: 1px solid var(--border);
+  padding: .75rem .8rem .8rem;
+}
+.debug-panel-body p {
+  font-size: .74rem;
+  color: var(--muted);
+  margin-bottom: .5rem;
+}
+#debug-log {
+  background: #111827;
+  color: #d1fae5;
+  border-radius: .35rem;
+  padding: .65rem .75rem;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+.summary-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  margin-bottom: .9rem;
+}
+.engine-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--border);
+  border-radius: .5rem;
+  padding: .85rem;
+}
+.engine-panel.engine-webr { border-top-color: var(--webr); }
+.engine-panel.engine-jax { border-top-color: var(--jax); }
+.engine-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: .75rem;
+  align-items: baseline;
+  margin-bottom: .75rem;
+}
+.engine-panel-head h3 { font-size: .92rem; }
+.engine-panel-head span {
+  font-size: .76rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.engine-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .5rem;
+}
+.chart-rows { display: grid; gap: .85rem; }
+.chart-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .75rem;
+}
+.chart-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  align-items: baseline;
+  margin-bottom: .6rem;
+}
+.chart-row-head h3 { font-size: .9rem; }
+.chart-row-head span { font-size: .74rem; color: var(--muted); }
+.chart-row-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+}
 .chart-box { background: var(--card); border: 1px solid var(--border);
   border-radius: .5rem; padding: .75rem; }
-.chart-box h3 { font-size: .85rem; margin-bottom: .5rem; color: var(--muted); }
+.chart-box.engine-webr { border-color: color-mix(in srgb, var(--webr) 35%, var(--border)); }
+.chart-box.engine-jax { border-color: color-mix(in srgb, var(--jax) 35%, var(--border)); }
+.chart-box-head {
+  display: flex;
+  justify-content: space-between;
+  gap: .5rem;
+  align-items: baseline;
+  margin-bottom: .45rem;
+}
+.chart-box-head h4 { font-size: .83rem; color: var(--text); }
+.chart-box-head span { font-size: .72rem; color: var(--muted); }
 canvas { width: 100% !important; height: 200px !important; }
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .5rem;
   margin-bottom: 1rem; }
@@ -66,6 +215,12 @@ canvas { width: 100% !important; height: 200px !important; }
 .stat .lbl { font-size: .75rem; color: var(--muted); }
 footer { margin-top: 1.5rem; text-align: center; color: var(--muted); font-size: .8rem; }
 footer a { color: var(--accent); }
+@media (max-width: 900px) {
+  .summary-panels,
+  .chart-row-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
 </head>
 <body>
@@ -85,7 +240,16 @@ footer a { color: var(--accent); }
 <div style="font-size:.8rem;margin-bottom:.5rem">
   <span id="sab-check"></span>
 </div>
-<div id="status" class="loading">Initializing WebR…</div>
+<div id="status" class="loading">Loading reference inputs…</div>
+<details class="debug-panel" open>
+  <summary>JAX Debug Log</summary>
+  <div class="debug-panel-body">
+    <p>
+      Early JAX demo checkpoints are mirrored here so you can see the last completed step even if the browser freezes.
+    </p>
+    <pre id="debug-log">waiting for JAX debug output...</pre>
+  </div>
+</details>
 
 <div class="grid">
   <!-- Parameters (left sidebar) --------------------------------------- -->
@@ -115,6 +279,49 @@ footer a { color: var(--accent); }
           <option value="0">no (allocate)</option>
         </select>
       </label>
+    </details>
+
+    <details open>
+      <summary>Simulation Engines</summary>
+      <label class="engine-option">
+        <span class="engine-option-main">
+          <input type="checkbox" id="engine-webr" checked>
+          <span class="engine-option-copy">
+            <strong>WebR</strong>
+            <span>Fortran reference package running in the browser.</span>
+          </span>
+        </span>
+        <span class="engine-timing" id="engine-webr-timing" data-state="idle">not run</span>
+      </label>
+      <label class="engine-option">
+        <span class="engine-option-main">
+          <input type="checkbox" id="engine-jax" checked>
+          <span class="engine-option-copy">
+            <strong>jax-js-nonconsuming</strong>
+            <span>Browser-side TypeScript integration port with daily diagnostics.</span>
+          </span>
+        </span>
+        <span class="engine-timing" id="engine-jax-timing" data-state="idle">not run</span>
+      </label>
+      <div class="engine-settings" id="engine-jax-settings">
+        <label class="engine-setting-row">Backend
+          <select id="engine-jax-backend">
+            <option value="webgpu">webgpu</option>
+            <option value="wasm">wasm</option>
+            <option value="cpu">cpu</option>
+            <option value="webgl">webgl</option>
+          </select>
+        </label>
+        <label class="engine-setting-row">Use JIT
+          <input type="checkbox" id="engine-jax-jit" checked>
+        </label>
+        <p class="engine-setting-help">
+          JAX full-model replay runs in a dedicated worker so the page stays responsive. Runs that exceed the current browser timeout fail cleanly instead of freezing the tab.
+        </p>
+      </div>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:.25rem">
+        Run one or both engines. Timings are updated after each simulation.
+      </p>
     </details>
 
     <details>
@@ -168,7 +375,7 @@ footer a { color: var(--accent); }
       </p>
     </details>
 
-    <button id="run-btn" disabled>Run SVMC</button>
+    <button id="run-btn" disabled>Run Selected Engines</button>
   </div>
 
   <!-- Results (right panel) ------------------------------------------- -->
@@ -176,28 +383,15 @@ footer a { color: var(--accent); }
     <div class="card" style="margin-bottom:.75rem">
       <h2>Simulated Model Outputs</h2>
       <p style="font-size:.78rem;color:var(--muted)">
-        These summaries and charts are produced by running the SVMC model in WebR/Fortran
-        on the selected reference inputs. They are not prerecorded output files.
+        These summaries and charts are produced live in the browser from the selected
+        engines. The comparison view below focuses on daily diagnostics shared by the
+        WebR reference path and the jax-js-nonconsuming integration port.
       </p>
     </div>
-    <div class="summary-grid" id="summary" style="display:none">
-      <div class="stat"><div class="val" id="s-gpp">—</div><div class="lbl">Mean Annual GPP (g C/m²/yr)</div></div>
-      <div class="stat"><div class="val" id="s-nee">—</div><div class="lbl">Mean Annual NEE (g C/m²/yr)</div></div>
-      <div class="stat"><div class="val" id="s-soilc">—</div><div class="lbl">Final SOC (kg/m²)</div></div>
-      <div class="stat"><div class="val" id="s-lai">—</div><div class="lbl">Peak LAI</div></div>
-      <div class="stat"><div class="val" id="s-et">—</div><div class="lbl">Mean Annual ET (mm/yr)</div></div>
-      <div class="stat"><div class="val" id="s-cleaf">—</div><div class="lbl">Peak C_leaf (g/m²)</div></div>
-    </div>
-    <div class="chart-grid" id="charts" style="display:none">
-      <div class="chart-box"><h3>GPP &amp; NEE (daily)</h3><canvas id="ch-flux"></canvas></div>
-      <div class="chart-box"><h3>Carbon pools (daily)</h3><canvas id="ch-pools"></canvas></div>
-      <div class="chart-box"><h3>Soil carbon (YASSO20)</h3><canvas id="ch-soilc"></canvas></div>
-      <div class="chart-box"><h3>Soil moisture &amp; SWE (hourly)</h3><canvas id="ch-water"></canvas></div>
-      <div class="chart-box"><h3>Hourly GPP &amp; transpiration</h3><canvas id="ch-hourly"></canvas></div>
-      <div class="chart-box"><h3>Stomatal conductance (hourly)</h3><canvas id="ch-gs"></canvas></div>
-    </div>
+    <div class="summary-panels" id="summary-panels" style="display:none"></div>
+    <div class="chart-rows" id="chart-rows" style="display:none"></div>
     <div id="placeholder" class="card" style="text-align:center;color:var(--muted);padding:3rem">
-      Run the model to generate simulated outputs from the selected reference inputs
+      Run one or both engines to compare simulated daily outputs from the selected reference inputs
     </div>
   </div>
 </div>
@@ -213,376 +407,6 @@ footer a { color: var(--accent); }
 
 <!-- WebR + Chart.js --------------------------------------------------- -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-<script type="module">
-import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
-
-const status = document.getElementById("status");
-const runBtn = document.getElementById("run-btn");
-const referencePeriod = document.getElementById("reference-period");
-const referenceSource = document.getElementById("reference-source");
-
-// ---- SharedArrayBuffer check ----
-const sabEl = document.getElementById("sab-check");
-if (typeof SharedArrayBuffer !== "undefined") {
-  sabEl.textContent = "\u2705 SharedArrayBuffer available (cross-origin isolated)";
-  sabEl.style.color = "var(--ok)";
-} else {
-  sabEl.textContent = "\u274c SharedArrayBuffer unavailable \u2014 WebR requires cross-origin isolation";
-  sabEl.style.color = "#dc3545";
-}
-
-// ---- boot WebR & install SVMCwebr ----
-status.textContent = "Loading WebR runtime…";
-const webR = new WebR();
-await webR.init();
-
-status.textContent = "Installing SVMCwebr…";
-await webR.installPackages(["SVMCwebr"], {
-  repos: [repoUrl(), "https://repo.r-wasm.org/"],
-});
-await webR.evalRVoid("library(SVMCwebr)");
-
-status.textContent = "Loading Qvidja reference inputs…";
-const referenceData = await loadReferenceData();
-applyReferenceDefaults(referenceData);
-
-status.className = "ok";
-status.textContent = "Ready — reference inputs loaded and SVMCwebr is available. Click 'Run SVMC' to simulate model outputs.";
-runBtn.disabled = false;
-
-// ---- helpers ----
-function repoUrl() {
-  const loc = window.location;
-  if (loc.hostname === "localhost" || loc.hostname === "127.0.0.1") {
-    return loc.origin;
-  }
-  // On GitHub Pages the CRAN repo lives at /diffSVMC/repo/
-  return loc.origin + loc.pathname.replace(/\/?$/, "/") + "repo/";
-}
-
-function val(id) {
-  const el = document.getElementById(id);
-  return el.tagName === "SELECT" ? parseInt(el.value) : parseFloat(el.value);
-}
-
-async function loadReferenceData() {
-  const response = await fetch(new URL("./qvidja-v1-reference.json", window.location.href));
-  if (!response.ok) {
-    throw new Error(`Failed to load Qvidja reference data (${response.status})`);
-  }
-  return await response.json();
-}
-
-function applyReferenceDefaults(reference) {
-  const { defaults, site } = reference;
-  document.getElementById("ndays").max = String(site.ndays);
-  document.getElementById("ndays").value = String(site.ndays);
-  document.getElementById("pft_type_code").value = String(defaults.pft_type_code);
-  document.getElementById("obs_lai").value = defaults.obs_lai ? "1" : "0";
-
-  document.getElementById("conductivity").value = String(defaults.conductivity);
-  document.getElementById("psi50").value = String(defaults.psi50);
-  document.getElementById("b_param").value = String(defaults.b);
-  document.getElementById("alpha").value = String(defaults.alpha);
-  document.getElementById("gamma").value = String(defaults.gamma);
-  document.getElementById("rdark").value = String(defaults.rdark);
-
-  document.getElementById("soil_depth").value = String(defaults.soil_depth);
-  document.getElementById("max_poros").value = String(defaults.max_poros);
-  document.getElementById("fc").value = String(defaults.fc);
-  document.getElementById("wp").value = String(defaults.wp);
-  document.getElementById("ksat").value = String(defaults.ksat);
-
-  document.getElementById("cratio_resp").value = String(defaults.cratio_resp);
-  document.getElementById("cratio_leaf").value = String(defaults.cratio_leaf);
-  document.getElementById("cratio_root").value = String(defaults.cratio_root);
-  document.getElementById("cratio_biomass").value = String(defaults.cratio_biomass);
-  document.getElementById("harvest_index").value = String(defaults.harvest_index);
-  document.getElementById("turnover_cleaf").value = String(defaults.turnover_cleaf);
-  document.getElementById("turnover_croot").value = String(defaults.turnover_croot);
-  document.getElementById("sla").value = String(defaults.sla);
-  document.getElementById("q10").value = String(defaults.q10);
-
-  document.getElementById("yasso_totc").value = String(defaults.yasso_totc);
-  document.getElementById("yasso_cn_input").value = String(defaults.yasso_cn_input);
-  document.getElementById("yasso_fract_root").value = String(defaults.yasso_fract_root);
-  document.getElementById("yasso_fract_legacy").value = String(defaults.yasso_fract_legacy);
-
-  referencePeriod.textContent = `Reference replay window: ${site.start_date} to ${site.end_date_exclusive} (${site.ndays} days, ${site.nhours} hourly steps)`;
-  referenceSource.textContent = `Source: vendored Qvidja NetCDF inputs under vendor/SVMC/data/input, matching the maintained SVMC v1.0.0 test configuration.`;
-}
-
-function sliceReferenceData(reference, ndays) {
-  const cappedDays = Math.max(1, Math.min(ndays, reference.site.ndays));
-  const nhours = cappedDays * 24;
-  return {
-    nhours,
-    ndays: cappedDays,
-    hourly: {
-      temp_hr: reference.hourly.temp_hr.slice(0, nhours),
-      rg_hr: reference.hourly.rg_hr.slice(0, nhours),
-      prec_hr: reference.hourly.prec_hr.slice(0, nhours),
-      vpd_hr: reference.hourly.vpd_hr.slice(0, nhours),
-      pres_hr: reference.hourly.pres_hr.slice(0, nhours),
-      co2_hr: reference.hourly.co2_hr.slice(0, nhours),
-      wind_hr: reference.hourly.wind_hr.slice(0, nhours),
-      timestamps: reference.hourly.timestamps.slice(0, nhours),
-    },
-    daily: {
-      dates: reference.daily.dates.slice(0, cappedDays),
-      lai_day: reference.daily.lai_day.slice(0, cappedDays),
-      snowdepth_day: reference.daily.snowdepth_day.slice(0, cappedDays),
-      soilmoist_day: reference.daily.soilmoist_day.slice(0, cappedDays),
-      manage_type: reference.daily.manage_type.slice(0, cappedDays),
-      manage_c_in: reference.daily.manage_c_in.slice(0, cappedDays),
-      manage_c_out: reference.daily.manage_c_out.slice(0, cappedDays),
-    },
-    defaults: reference.defaults,
-  };
-}
-
-// ---- chart management ----
-const charts = {};
-function makeChart(canvasId, config) {
-  if (charts[canvasId]) charts[canvasId].destroy();
-  const ctx = document.getElementById(canvasId).getContext("2d");
-  charts[canvasId] = new Chart(ctx, config);
-}
-
-function lineDataset(label, data, color, yAxisID = "y") {
-  return { label, data, borderColor: color, borderWidth: 1.5,
-           pointRadius: 0, tension: 0.1, yAxisID };
-}
-
-function chartOpts(xLabel, yLabel, y2Label) {
-  const scales = {
-    x: { title: { display: true, text: xLabel }, ticks: { maxTicksLimit: 12 } },
-    y: { title: { display: true, text: yLabel }, position: "left" },
-  };
-  if (y2Label) {
-    scales.y2 = { title: { display: true, text: y2Label }, position: "right",
-                  grid: { drawOnChartArea: false } };
-  }
-  return { responsive: true, maintainAspectRatio: false,
-           interaction: { mode: "index", intersect: false },
-           scales, plugins: { legend: { labels: { boxWidth: 12, font: { size: 11 } } } } };
-}
-
-// ---- run simulation ----
-runBtn.addEventListener("click", async () => {
-  runBtn.disabled = true;
-  status.className = "loading";
-
-  const requestedDays = val("ndays");
-  status.textContent = `Loading ${requestedDays}-day slice of the Qvidja reference inputs…`;
-
-  try {
-    const f = sliceReferenceData(referenceData, requestedDays);
-    document.getElementById("ndays").value = String(f.ndays);
-
-    status.textContent = "Binding reference inputs to R…";
-
-    // Bind arrays to R global env (avoids huge inline R expressions)
-    const env = webR.objs.globalEnv;
-    await env.bind(".__temp_hr", await new webR.RDouble(Array.from(f.hourly.temp_hr)));
-    await env.bind(".__rg_hr", await new webR.RDouble(Array.from(f.hourly.rg_hr)));
-    await env.bind(".__prec_hr", await new webR.RDouble(Array.from(f.hourly.prec_hr)));
-    await env.bind(".__vpd_hr", await new webR.RDouble(Array.from(f.hourly.vpd_hr)));
-    await env.bind(".__pres_hr", await new webR.RDouble(Array.from(f.hourly.pres_hr)));
-    await env.bind(".__co2_hr", await new webR.RDouble(Array.from(f.hourly.co2_hr)));
-    await env.bind(".__wind_hr", await new webR.RDouble(Array.from(f.hourly.wind_hr)));
-    await env.bind(".__lai_day", await new webR.RDouble(Array.from(f.daily.lai_day)));
-    await env.bind(".__snow_day", await new webR.RDouble(Array.from(f.daily.snowdepth_day)));
-    await env.bind(".__sm_day", await new webR.RDouble(Array.from(f.daily.soilmoist_day)));
-    await env.bind(".__manage_type", await new webR.RDouble(Array.from(f.daily.manage_type)));
-    await env.bind(".__manage_c_in", await new webR.RDouble(Array.from(f.daily.manage_c_in)));
-    await env.bind(".__manage_c_out", await new webR.RDouble(Array.from(f.daily.manage_c_out)));
-
-    status.textContent = "Running SVMC (Fortran) to generate model outputs…";
-    const t0 = performance.now();    const rCode = `
-      result <- svmc_run(
-        nhours = ${f.nhours}L, ndays = ${f.ndays}L,
-        temp_hr = .__temp_hr,
-        rg_hr = .__rg_hr,
-        prec_hr = .__prec_hr,
-        vpd_hr = .__vpd_hr,
-        pres_hr = .__pres_hr,
-        co2_hr = .__co2_hr,
-        wind_hr = .__wind_hr,
-        lai_day = .__lai_day,
-        snowdepth_day = .__snow_day,
-        soilmoist_day = .__sm_day,
-        obs_lai = ${val("obs_lai") ? "TRUE" : "FALSE"},
-        obs_soilmoist = FALSE,
-        obs_snowdepth = FALSE,
-        conductivity = ${val("conductivity")},
-        psi50 = ${val("psi50")},
-        b = ${val("b_param")},
-        alpha = ${val("alpha")},
-        gamma = ${val("gamma")},
-        rdark = ${val("rdark")},
-        pft_type_code = ${val("pft_type_code")}L,
-        opt_hypothesis = "${f.defaults.opt_hypothesis}",
-        soil_depth = ${val("soil_depth")},
-        max_poros = ${val("max_poros")},
-        fc = ${val("fc")},
-        wp = ${val("wp")},
-        ksat = ${val("ksat")},
-        cratio_resp = ${val("cratio_resp")},
-        cratio_leaf = ${val("cratio_leaf")},
-        cratio_root = ${val("cratio_root")},
-        cratio_biomass = ${val("cratio_biomass")},
-        harvest_index = ${val("harvest_index")},
-        turnover_cleaf = ${val("turnover_cleaf")},
-        turnover_croot = ${val("turnover_croot")},
-        sla = ${val("sla")},
-        q10 = ${val("q10")},
-        yasso_totc = ${val("yasso_totc")},
-        yasso_cn_input = ${val("yasso_cn_input")},
-        yasso_fract_root = ${val("yasso_fract_root")},
-        yasso_fract_legacy = ${val("yasso_fract_legacy")},
-        manage_type = .__manage_type,
-        manage_c_in = .__manage_c_in,
-        manage_c_out = .__manage_c_out
-      )
-      rm(.__temp_hr, .__rg_hr, .__prec_hr, .__vpd_hr, .__pres_hr,
-         .__co2_hr, .__wind_hr, .__lai_day, .__snow_day, .__sm_day,
-         .__manage_type, .__manage_c_in, .__manage_c_out)
-      result
-    `;
-
-    const rObj = await webR.evalR(rCode);
-    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-
-    // Extract arrays from R list
-    const getVec = async (name) => {
-      const v = await rObj.get(name);
-      return await v.toArray();
-    };
-
-    status.textContent = "Extracting results…";
-
-    const [gpp_hr, gs_hr, tr_hr, le_hr, soilmoist_hr, swe_hr, psi_soil_hr,
-           gpp_day, nee_day, npp_day, hetero_resp, auto_resp,
-           cleaf, croot, cstem, soil_c, above_bio, below_bio, lai_alloc] =
-      await Promise.all([
-        getVec("gpp_hr"), getVec("gs_hr"), getVec("tr_hr"), getVec("le_hr"),
-        getVec("soilmoist_hr"), getVec("swe_hr"), getVec("psi_soil_hr"),
-        getVec("gpp_day"), getVec("nee_day"), getVec("npp_day"),
-        getVec("hetero_resp"), getVec("auto_resp"),
-        getVec("cleaf"), getVec("croot"), getVec("cstem"),
-        getVec("soil_c"), getVec("above_bio"), getVec("below_bio"),
-        getVec("lai_alloc"),
-      ]);
-
-    // ---- Summary stats ----
-    const years = f.ndays / 365.25;
-    const totalGPP = gpp_day.reduce((s, v) => s + v, 0) * 86400 * 1000 / years;
-    const totalNEE = nee_day.reduce((s, v) => s + v, 0) * 86400 * 1000 / years;
-    const finalSOC = soil_c[soil_c.length - 1];
-    const peakLAI  = val("obs_lai") ? Math.max(...f.daily.lai_day) : Math.max(...lai_alloc);
-    const totalET  = tr_hr.reduce((s, v) => s + v, 0) * 3600 / years; // mm/s -> mm/yr
-    const peakCleaf = Math.max(...cleaf) * 1000; // kg -> g
-
-    document.getElementById("summary").style.display = "";
-    const fmt = (v, d) => (v != null && isFinite(v)) ? v.toFixed(d) : "—";
-    document.getElementById("s-gpp").textContent = fmt(totalGPP, 1);
-    document.getElementById("s-nee").textContent = fmt(totalNEE, 1);
-    document.getElementById("s-soilc").textContent = fmt(finalSOC, 2);
-    document.getElementById("s-lai").textContent = fmt(peakLAI, 2);
-    document.getElementById("s-et").textContent = fmt(totalET, 1);
-    document.getElementById("s-cleaf").textContent = fmt(peakCleaf, 2);
-
-    // ---- Charts ----
-    document.getElementById("charts").style.display = "";
-    document.getElementById("placeholder").style.display = "none";
-    const dayLabels = f.daily.dates;
-    // For hourly charts, subsample to daily resolution for readability
-    const hourStep = Math.max(1, Math.floor(f.nhours / 2000));
-    const hrLabels = [];
-    const gppSub = [], trSub = [], smSub = [], sweSub = [], gsSub = [];
-    for (let i = 0; i < f.nhours; i += hourStep) {
-      hrLabels.push(f.hourly.timestamps[i].slice(0, 10));
-      gppSub.push(gpp_hr[i] * 1e6 * 1000);  // kg C m-2 s-1 -> µmol m-2 s-1 (approx)
-      trSub.push(tr_hr[i] * 3600);            // mm/s -> mm/hr
-      smSub.push(soilmoist_hr[i]);
-      sweSub.push(swe_hr[i] * 1000);          // m -> mm
-      gsSub.push(gs_hr[i]);
-    }
-
-    // 1. Flux chart (daily GPP & NEE)
-    const gppDay_g = gpp_day.map(v => v * 86400 * 1000);
-    const neeDay_g = nee_day.map(v => v * 86400 * 1000);
-    makeChart("ch-flux", {
-      type: "line",
-      data: { labels: dayLabels, datasets: [
-        lineDataset("GPP", gppDay_g, "#198754"),
-        lineDataset("NEE", neeDay_g, "#dc3545"),
-      ]},
-      options: chartOpts("Day", "g C m⁻² d⁻¹"),
-    });
-
-    // 2. Carbon pools (daily)
-    const cleaf_g = cleaf.map(v => v * 1000);
-    const croot_g = croot.map(v => v * 1000);
-    const cstem_g = cstem.map(v => v * 1000);
-    makeChart("ch-pools", {
-      type: "line",
-      data: { labels: dayLabels, datasets: [
-        lineDataset("C_leaf", cleaf_g, "#198754"),
-        lineDataset("C_root", croot_g, "#6f42c1"),
-        lineDataset("C_stem", cstem_g, "#fd7e14"),
-      ]},
-      options: chartOpts("Day", "g C m⁻²"),
-    });
-
-    // 3. Soil carbon
-    makeChart("ch-soilc", {
-      type: "line",
-      data: { labels: dayLabels, datasets: [
-        lineDataset("Soil C (YASSO20)", soil_c, "#795548"),
-      ]},
-      options: chartOpts("Day", "kg C m⁻²"),
-    });
-
-    // 4. Soil moisture & SWE (hourly subsampled)
-    makeChart("ch-water", {
-      type: "line",
-      data: { labels: hrLabels, datasets: [
-        lineDataset("Soil moisture", smSub, "#0d6efd"),
-        lineDataset("SWE (mm)", sweSub, "#6c757d", "y2"),
-      ]},
-      options: chartOpts("Day", "m³/m³", "mm SWE"),
-    });
-
-    // 5. Hourly GPP & transpiration
-    makeChart("ch-hourly", {
-      type: "line",
-      data: { labels: hrLabels, datasets: [
-        { ...lineDataset("GPP (µmol/m²/s)", gppSub, "#198754"), borderColor: "rgba(25,135,84,0.55)" },
-        { ...lineDataset("Tr (mm/hr)", trSub, "#0dcaf0", "y2"), borderColor: "rgba(13,202,240,0.55)" },
-      ]},
-      options: chartOpts("Day", "µmol m⁻² s⁻¹", "mm hr⁻¹"),
-    });
-
-    // 6. Stomatal conductance
-    makeChart("ch-gs", {
-      type: "line",
-      data: { labels: hrLabels, datasets: [
-        lineDataset("gs (mol/m²/s)", gsSub, "#e91e63"),
-      ]},
-      options: chartOpts("Day", "mol m⁻² s⁻¹"),
-    });
-
-    status.className = "ok";
-    status.textContent = `Done \u2014 simulated ${f.ndays} days (${f.daily.dates[0]} to ${f.daily.dates[f.daily.dates.length - 1]}) in ${elapsed}\u2009s.`;
-  } catch (e) {
-    status.className = "err";
-    status.textContent = "Error: " + e.message;
-    console.error(e);
-  }
-  runBtn.disabled = false;
-});
-</script>
+<script type="module" src="./src/qvidja-demo.js"></script>
 </body>
 </html>

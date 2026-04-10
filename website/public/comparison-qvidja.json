@@ -3,8 +3,8 @@
     "site": "Qvidja",
     "ndays": 1697,
     "generated_by": "scripts/generate_comparison.py",
-    "generated_at_utc": "2026-03-31T10:59:26Z",
-    "git_commit": "3cc165692f8685425a2dc78ee96aea46b20c5431",
+    "generated_at_utc": "2026-04-09T12:37:05Z",
+    "git_commit": "2b822ea6eefcd39665531da1ca6f2578d885c7c9",
     "git_dirty": true,
     "qvidja_reference_sha256": "4d920c9a747da9f480bdfff085e66300415e281d95beae645e6440cc0cfc8236",
     "compare_keys": [

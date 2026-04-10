@@ -3,6 +3,9 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
+  worker: {
+    format: "es",
+  },
   build: {
     outDir: "dist",
     target: "esnext",

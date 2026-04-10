@@ -9,6 +9,9 @@
     "build:webr": "bash build-webr.sh",
     "preview": "vite preview"
   },
+  "dependencies": {
+    "@diffsvmc/svmc-js": "workspace:*"
+  },
   "devDependencies": {
     "vite": "^6.3.5"
   }

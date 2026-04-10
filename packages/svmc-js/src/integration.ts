@@ -24,6 +24,15 @@ const ALPHA_SMOOTH1 = 0.01;
 const ALPHA_SMOOTH2 = 0.0016;
 const LAI_GUARD = 1.0e-6;
 
+type IntegrationDebugHook = (message: string, details?: Record<string, unknown>) => void;
+
+function integrationDebug(message: string, details?: Record<string, unknown>): void {
+  const hook = (globalThis as typeof globalThis & {
+    __SVMC_DEMO_DEBUG__?: IntegrationDebugHook;
+  }).__SVMC_DEMO_DEBUG__;
+  hook?.(`[svmc-js:integration] ${message}`, details);
+}
+
 interface RunIntegrationNumericInputs<TArray> {
   hourly_temp: TArray;
   hourly_rg: TArray;
@@ -537,6 +546,7 @@ function executeScanDailySequence(
   ndays: number,
   daily_step: (carry: DailyCarry, forcing: DailyForcing) => [DailyCarry, DailyOutput],
 ): ScanDailySequenceResult {
+  integrationDebug("executeScanDailySequence:before-lax.scan", { ndays });
   return lax.scan(
     daily_step as unknown as (
       carry: JsTree<np.Array>,
@@ -568,15 +578,23 @@ function runScanDailySequenceWithRunner(
   daily_init: DailyCarry,
   runSequence: ScanDailySequenceFn,
 ): ScanDailySequenceResult {
+  integrationDebug("runScanDailySequenceWithRunner:start");
   const daily_forcing = createTracedDailyForcing(inputs);
+  integrationDebug("runScanDailySequenceWithRunner:forcing-created", {
+    hourlyShape: daily_forcing.hourly_temp.shape,
+    laiShape: daily_forcing.lai.shape,
+  });
 
   const result = runSequence(daily_init, daily_forcing);
+  integrationDebug("runScanDailySequenceWithRunner:scan-returned");
 
   const [final_carry] = result;
 
   // The scan owns its returned carry and outputs, but the large forcing arrays
   // and most initial carry leaves are internal-only and must be released here.
+  integrationDebug("runScanDailySequenceWithRunner:dispose-forcing");
   disposeTracedDailyForcing(daily_forcing);
+  integrationDebug("runScanDailySequenceWithRunner:dispose-initial-carry");
   disposeDailyBoundaryCarryIfNotAliased(daily_init, final_carry);
 
   return result;
@@ -962,11 +980,18 @@ function withSharedIntegrationResources<TResult>(
 ): TResult {
   const solverKind = resolveSolverKind(inputs.phydro_optimizer);
   const ndays = leadingLength(inputs.daily_lai);
+  integrationDebug("withSharedIntegrationResources:start", { solverKind, ndays });
   const resources = createSharedIntegrationResources(inputs);
+  integrationDebug("withSharedIntegrationResources:resources-created", {
+    yassoParamShape: resources.yasso_param.shape,
+    initialCstateShape: resources.initial_cstate.shape,
+    initialNstateShape: resources.initial_nstate.shape,
+  });
 
   try {
     return run({ solverKind, ndays, resources });
   } finally {
+    integrationDebug("withSharedIntegrationResources:dispose");
     disposeSharedIntegrationResources(resources);
   }
 }
@@ -974,21 +999,38 @@ function withSharedIntegrationResources<TResult>(
 function runPreparedIntegration(
   inputs: RunIntegrationInputs,
 ): IntegrationResult {
+  integrationDebug("runPreparedIntegration:start", {
+    ndays: leadingLength(inputs.daily_lai),
+    hourlyShape: inputs.hourly_temp.shape,
+    laiShape: inputs.daily_lai.shape,
+  });
   return withSharedIntegrationResources(inputs, (context) => {
+    integrationDebug("runPreparedIntegration:create-step-resources:start", {
+      solverKind: context.solverKind,
+      ndays: context.ndays,
+    });
     const executionResources = createScanDailyStepResources(
       inputs,
       context.resources,
       context.solverKind,
     );
+    integrationDebug("runPreparedIntegration:create-step-resources:done");
 
     try {
+      integrationDebug("runPreparedIntegration:consume-initial-carry:start");
       const initialState = consumeInitialScanDailyCarryFromResources(context.resources);
+      integrationDebug("runPreparedIntegration:consume-initial-carry:done", {
+        cleafShape: initialState.cleaf.shape,
+        cstateShape: initialState.cstate.shape,
+      });
+      integrationDebug("runPreparedIntegration:scan:start", { ndays: context.ndays });
       return runScanDailySequenceWithRunner(
         inputs,
         initialState,
         makeScanDailySequence(context.ndays, executionResources.daily_step),
       );
     } finally {
+      integrationDebug("runPreparedIntegration:dispose-step-resources");
       disposeScanDailyStepResources(executionResources);
     }
   });
@@ -1581,5 +1623,9 @@ function makeDailyStep(
 }
 
 export function runIntegration(inputs: RunIntegrationInputs): IntegrationResult {
+  integrationDebug("runIntegration:entry", {
+    ndays: leadingLength(inputs.daily_lai),
+    optimizer: inputs.phydro_optimizer ?? "default",
+  });
   return runPreparedIntegration(inputs);
 }
