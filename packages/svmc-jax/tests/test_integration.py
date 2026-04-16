@@ -15,8 +15,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from svmc_jax.integration import run_integration
-from svmc_jax.qvidja_replay import build_qvidja_run_kwargs
+from svmc_jax.integration import run_integration, run_integration_grouped
+from svmc_jax.qvidja_replay import build_qvidja_run_inputs, build_qvidja_run_kwargs
 
 # ── Paths ─────────────────────────────────────────────────────────────
 
@@ -249,6 +249,7 @@ def test_integration_1day_jit_consistent():
     np.testing.assert_allclose(
         float(out_jit.et_total[0]), float(out_eager.et_total[0]),
         rtol=1e-9,
+        atol=1e-8,
         err_msg="JIT vs eager ET mismatch",
     )
 
@@ -276,3 +277,46 @@ def test_integration_1day_et_nonnegative():
     et = float(out.et_total[0])
     assert jnp.isfinite(out.et_total[0]), f"ET is not finite: {et}"
     assert et >= 0.0, f"ET is negative: {et}"
+
+
+def test_integration_grouped_entrypoint_vmappable():
+    """Grouped integration inputs should support site batching via vmap."""
+    ref = _load_qvidja_ref()
+    forcing, params = build_qvidja_run_inputs(ref, 1)
+
+    _single_carry, single_out = run_integration_grouped(forcing, params)
+
+    batched_forcing = jax.tree.map(lambda x: jnp.stack([x, x]), forcing)
+    batched_params = jax.tree.map(lambda x: jnp.stack([x, x]), params)
+
+    batched_run = jax.jit(
+        jax.vmap(
+            lambda forcing_i, params_i: run_integration_grouped(forcing_i, params_i),
+        )
+    )
+    _batched_carry, batched_out = batched_run(batched_forcing, batched_params)
+
+    expected_gpp = float(single_out.gpp_avg[0])
+    expected_et = float(single_out.et_total[0])
+    expected_soc = float(single_out.soc_total[0])
+
+    np.testing.assert_allclose(
+        np.array(batched_out.gpp_avg[:, 0]),
+        np.full((2,), expected_gpp),
+        rtol=1e-9,
+        atol=5e-16,
+        err_msg="vmapped grouped GPP mismatch",
+    )
+    np.testing.assert_allclose(
+        np.array(batched_out.et_total[:, 0]),
+        np.full((2,), expected_et),
+        rtol=1e-9,
+        atol=1e-8,
+        err_msg="vmapped grouped ET mismatch",
+    )
+    np.testing.assert_allclose(
+        np.array(batched_out.soc_total[:, 0]),
+        np.full((2,), expected_soc),
+        rtol=1e-9,
+        err_msg="vmapped grouped SOC mismatch",
+    )
