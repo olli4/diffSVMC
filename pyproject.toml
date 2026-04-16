@@ -25,4 +25,8 @@ dev = [
 packages = ["packages/svmc-jax/src/svmc_jax"]
 
 [tool.pytest.ini_options]
+addopts = ["--strict-markers"]
 testpaths = ["packages/svmc-jax/tests"]
+markers = [
+  "slow: marks longer-running integration-style tests",
+]
