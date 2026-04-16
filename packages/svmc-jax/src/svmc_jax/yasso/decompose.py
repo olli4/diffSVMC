@@ -12,6 +12,8 @@ Nitrogen dynamics follow CUE-based immobilization/mineralization.
 
 import jax.numpy as jnp
 
+from ._matrix import build_awenh_matrix
+
 _DAYS_YR = 365.25
 _NC_MB = 0.1     # microbial biomass N:C ratio
 _CUE_MIN = 0.1   # minimum carbon use efficiency
@@ -60,46 +62,7 @@ def _evaluate_matrix(
         -jnp.abs(param[31]) * decmH,
     ])
 
-    abs_diag = jnp.abs(diag_rates)
-
-    # Build A matrix with off-diagonal transfers
-    A = jnp.zeros((5, 5), dtype=param.dtype)
-    A = A.at[0, 0].set(diag_rates[0])
-    A = A.at[1, 1].set(diag_rates[1])
-    A = A.at[2, 2].set(diag_rates[2])
-    A = A.at[3, 3].set(diag_rates[3])
-    A = A.at[4, 4].set(diag_rates[4])
-
-    # Row 0 (A pool receives from W, E, N)
-    A = A.at[0, 1].set(param[4] * abs_diag[1])
-    A = A.at[0, 2].set(param[5] * abs_diag[2])
-    A = A.at[0, 3].set(param[6] * abs_diag[3])
-    # A[0,4] = 0: no mass flows H → AWEN
-
-    # Row 1 (W pool receives from A, E, N)
-    A = A.at[1, 0].set(param[7] * abs_diag[0])
-    A = A.at[1, 2].set(param[8] * abs_diag[2])
-    A = A.at[1, 3].set(param[9] * abs_diag[3])
-
-    # Row 2 (E pool receives from A, W, N)
-    A = A.at[2, 0].set(param[10] * abs_diag[0])
-    A = A.at[2, 1].set(param[11] * abs_diag[1])
-    A = A.at[2, 3].set(param[12] * abs_diag[3])
-
-    # Row 3 (N pool receives from A, W, E)
-    A = A.at[3, 0].set(param[13] * abs_diag[0])
-    A = A.at[3, 1].set(param[14] * abs_diag[1])
-    A = A.at[3, 2].set(param[15] * abs_diag[2])
-
-    # Row 4 (H pool receives from AWEN)
-    A = A.at[4, 0].set(param[30] * abs_diag[0])
-    A = A.at[4, 1].set(param[30] * abs_diag[1])
-    A = A.at[4, 2].set(param[30] * abs_diag[2])
-    A = A.at[4, 3].set(param[30] * abs_diag[3])
-
-    # No leaching terms (unlike mod5c20)
-
-    return A
+    return build_awenh_matrix(diag_rates, param[4:16], param[30])
 
 
 def decompose(
