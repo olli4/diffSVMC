@@ -10,11 +10,43 @@ The implementation uses jnp.where for all branches to maintain JAX
 differentiability through the complete allocation logic.
 """
 
+import functools
+from typing import NamedTuple
+
+import jax
 import jax.numpy as jnp
 
 _SPD = 3600.0 * 24.0  # seconds per day
 
 
+class AllocHypothesisResult(NamedTuple):
+    """Typed allocation result container with backward-compatible key access."""
+
+    npp_day: jnp.ndarray
+    auto_resp: jnp.ndarray
+    croot: jnp.ndarray
+    cleaf: jnp.ndarray
+    cstem: jnp.ndarray
+    cgrain: jnp.ndarray
+    litter_cleaf: jnp.ndarray
+    litter_croot: jnp.ndarray
+    compost: jnp.ndarray
+    lai: jnp.ndarray
+    abovebiomass: jnp.ndarray
+    belowbiomass: jnp.ndarray
+    yield_: jnp.ndarray
+    grain_fill: jnp.ndarray
+    pheno_stage: jnp.ndarray
+
+    def __getitem__(self, item):
+        if item == "yield":
+            return self.yield_
+        if isinstance(item, str):
+            return getattr(self, item)
+        return tuple.__getitem__(self, item)
+
+
+@functools.partial(jax.jit, static_argnames=())
 def alloc_hypothesis_2(
     temp_day, gpp_day, leaf_rdark_day,
     croot, cleaf, cstem, cgrain,
@@ -54,9 +86,9 @@ def alloc_hypothesis_2(
         pheno_stage: Phenological stage (1=growth, 2=dormancy).
 
     Returns:
-        Dict with keys: npp_day, auto_resp, croot, cleaf, cstem, cgrain,
-        litter_cleaf, litter_croot, compost, lai, abovebiomass, belowbiomass,
-        yield_, grain_fill, pheno_stage.
+        AllocHypothesisResult with fields: npp_day, auto_resp, croot, cleaf,
+        cstem, cgrain, litter_cleaf, litter_croot, compost, lai,
+        abovebiomass, belowbiomass, yield_, grain_fill, pheno_stage.
     """
     spd = _SPD
     is_growth = pheno_stage == 1
@@ -196,20 +228,20 @@ def alloc_hypothesis_2(
     d_pheno = 1  # reset to growth
 
     # ---------- SELECT BY PHENOLOGICAL STAGE ----------
-    return {
-        "npp_day": jnp.where(is_growth, m_npp, 0.0),
-        "auto_resp": jnp.where(is_growth, m_resp, 0.0),
-        "croot": jnp.where(is_growth, m_croot, 0.0),
-        "cleaf": jnp.where(is_growth, m_cleaf, 0.0),
-        "cstem": jnp.where(is_growth, m_cstem, 0.0),
-        "cgrain": jnp.where(is_growth, m_cgrain, cgrain),
-        "litter_cleaf": jnp.where(is_growth, g_litter_cleaf, d_litter_cleaf),
-        "litter_croot": jnp.where(is_growth, g_litter_croot, d_litter_croot),
-        "compost": jnp.where(is_growth, m_compost, 0.0),
-        "lai": jnp.where(is_growth, g_lai, d_lai),
-        "abovebiomass": jnp.where(is_growth, g_above, d_above),
-        "belowbiomass": jnp.where(is_growth, g_below, d_below),
-        "yield": jnp.float64(0.0),  # never modified
-        "grain_fill": grain_fill,    # never modified
-        "pheno_stage": jnp.where(is_growth, g_pheno, d_pheno),
-    }
+    return AllocHypothesisResult(
+        npp_day=jnp.where(is_growth, m_npp, 0.0),
+        auto_resp=jnp.where(is_growth, m_resp, 0.0),
+        croot=jnp.where(is_growth, m_croot, 0.0),
+        cleaf=jnp.where(is_growth, m_cleaf, 0.0),
+        cstem=jnp.where(is_growth, m_cstem, 0.0),
+        cgrain=jnp.where(is_growth, m_cgrain, cgrain),
+        litter_cleaf=jnp.where(is_growth, g_litter_cleaf, d_litter_cleaf),
+        litter_croot=jnp.where(is_growth, g_litter_croot, d_litter_croot),
+        compost=jnp.where(is_growth, m_compost, 0.0),
+        lai=jnp.where(is_growth, g_lai, d_lai),
+        abovebiomass=jnp.where(is_growth, g_above, d_above),
+        belowbiomass=jnp.where(is_growth, g_below, d_below),
+        yield_=jnp.float64(0.0),  # never modified
+        grain_fill=grain_fill,    # never modified
+        pheno_stage=jnp.where(is_growth, g_pheno, d_pheno),
+    )

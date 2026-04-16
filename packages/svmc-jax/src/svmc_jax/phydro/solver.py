@@ -17,7 +17,7 @@ phydro_mod.f90 in the Fortran SVMC model.
 """
 
 import functools
-from typing import Literal
+from typing import Literal, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -81,6 +81,30 @@ _LM_MIN = 1e-8
 _LM_MAX = 1e6
 
 
+class PModelHydraulicsResult(NamedTuple):
+    """Typed P-Hydro result container.
+
+    NamedTuple keeps the JAX pytree structure smaller than a dict in the
+    traced integration loop, while the string-key fallback preserves the
+    existing test and caller surface.
+    """
+
+    jmax: jax.Array
+    dpsi: jax.Array
+    gs: jax.Array
+    aj: jax.Array
+    ci: jax.Array
+    chi: jax.Array
+    vcmax: jax.Array
+    profit: jax.Array
+    chi_jmax_lim: jax.Array
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return getattr(self, item)
+        return tuple.__getitem__(self, item)
+
+
 def _objective(
     params: jax.Array,
     psi_soil: jax.Array,
@@ -121,31 +145,41 @@ def _projected_newton_solve(
         return _objective(x, psi_soil, par_cost, par_photosynth,
                           par_plant, par_env)
 
+    f0, g0 = jax.value_and_grad(obj_at)(_NEWTON_X0)
+
     def body(_, state):
-        x, lam = state
-        f_cur = obj_at(x)
-        grad_x = jax.grad(obj_at)(x)
+        x, f_cur, g_cur, lam = state
         hess = jax.hessian(obj_at)(x) + lam * jnp.eye(2)
-        step = jnp.linalg.solve(hess, grad_x)
+        step = jnp.linalg.solve(hess, g_cur)
         candidates = jnp.clip(
             x[None, :] - _NEWTON_STEP_SIZES[:, None] * step[None, :], _LO, _HI
         )
         vals = jax.vmap(obj_at)(candidates)
-        vals = jnp.concatenate([vals, f_cur[None]])
-        candidates = jnp.concatenate([candidates, x[None, :]], axis=0)
+        finite = jnp.isfinite(vals) & jnp.all(jnp.isfinite(candidates), axis=1)
+        safe_vals = jnp.where(finite, vals, jnp.inf)
 
-        best_idx = jnp.argmin(vals)
-        x_new = candidates[best_idx]
-        improved = vals[best_idx] < f_cur - 1e-14
+        best_idx = jnp.argmin(safe_vals)
+        best_val = safe_vals[best_idx]
+        improved = jnp.isfinite(best_val) & (best_val < f_cur - 1e-14)
+        x_next = jnp.where(improved, candidates[best_idx], x)
+        f_next = jnp.where(improved, best_val, f_cur)
+        # lax.cond: on CPU, skips the gradient when the step was rejected;
+        # on GPU both branches execute anyway (SIMT), so this is harmless.
+        g_next = jax.lax.cond(
+            improved,
+            lambda: jax.grad(obj_at)(x_next),
+            lambda: g_cur,
+        )
         new_lam = jnp.where(
             improved,
             jnp.maximum(lam * _LM_SHRINK, _LM_MIN),
             jnp.minimum(lam * _LM_GROW, _LM_MAX),
         )
-        return x_new, new_lam
+        return x_next, f_next, g_next, new_lam
 
-    x_opt, _ = jax.lax.fori_loop(
-        0, _NEWTON_MAXITER, body, (_NEWTON_X0, jnp.float64(_LM_INIT))
+    x_opt, _, _, _ = jax.lax.fori_loop(
+        0, _NEWTON_MAXITER, body,
+        (_NEWTON_X0, f0, g0, jnp.float64(_LM_INIT)),
     )
     return x_opt
 
@@ -251,8 +285,14 @@ def _lbfgs_solve_from_start(
         return _objective(x, psi_soil, par_cost, par_photosynth,
                           par_plant, par_env)
 
+    # Pre-compute initial objective and gradient; carried across iterations
+    # so that each iteration avoids redundant recomputation.
+    f0, g0 = jax.value_and_grad(obj_at)(start)
+
     init_state = (
         start,
+        f0,
+        g0,
         jnp.zeros((_MEMORY, 2), dtype=jnp.float64),
         jnp.zeros((_MEMORY, 2), dtype=jnp.float64),
         jnp.zeros((_MEMORY,), dtype=jnp.float64),
@@ -260,9 +300,7 @@ def _lbfgs_solve_from_start(
     )
 
     def body(_, state):
-        x, s_hist, y_hist, rho_hist, valid_hist = state
-        f_cur = obj_at(x)
-        g_cur = jax.grad(obj_at)(x)
+        x, f_cur, g_cur, s_hist, y_hist, rho_hist, valid_hist = state
         free = _free_mask(x, g_cur).astype(jnp.float64)
         direction = _lbfgs_direction(
             g_cur, s_hist, y_hist, rho_hist, valid_hist, free,
@@ -270,17 +308,19 @@ def _lbfgs_solve_from_start(
         candidates = jnp.clip(
             x[None, :] + _STEP_SIZES[:, None] * direction[None, :], _LO, _HI
         )
-        candidates = jnp.concatenate([candidates, x[None, :]], axis=0)
         vals = jax.vmap(obj_at)(candidates)
         finite = jnp.isfinite(vals) & jnp.all(jnp.isfinite(candidates), axis=1)
         safe_vals = jnp.where(finite, vals, jnp.inf)
-
         best_idx = jnp.argmin(safe_vals)
-        x_new = candidates[best_idx]
         best_val = safe_vals[best_idx]
         improved = jnp.isfinite(best_val) & (best_val < f_cur - 1e-14)
-        x_next = jnp.where(improved, x_new, x)
-        g_next = jax.grad(obj_at)(x_next)
+        x_next = jnp.where(improved, candidates[best_idx], x)
+        f_next = jnp.where(improved, best_val, f_cur)
+        g_next = jax.lax.cond(
+            improved,
+            lambda: jax.grad(obj_at)(x_next),
+            lambda: g_cur,
+        )
         s_hist, y_hist, rho_hist, valid_hist = _update_memory(
             s_hist,
             y_hist,
@@ -291,9 +331,9 @@ def _lbfgs_solve_from_start(
             free,
             improved,
         )
-        return (x_next, s_hist, y_hist, rho_hist, valid_hist)
+        return (x_next, f_next, g_next, s_hist, y_hist, rho_hist, valid_hist)
 
-    x_opt, _, _, _, _ = jax.lax.fori_loop(0, _MAXITER, body, init_state)
+    x_opt, _, _, _, _, _, _ = jax.lax.fori_loop(0, _MAXITER, body, init_state)
     return x_opt
 
 
@@ -311,9 +351,10 @@ def _projected_newton_polish(
         return _objective(x, psi_soil, par_cost, par_photosynth,
                           par_plant, par_env)
 
-    def body(_, x):
-        f_cur = obj_at(x)
-        g_cur = jax.grad(obj_at)(x)
+    f0, g0 = jax.value_and_grad(obj_at)(start)
+
+    def body(_, state):
+        x, f_cur, g_cur = state
         free = _free_mask(x, g_cur).astype(jnp.float64)
         hess = jax.hessian(obj_at)(x) + _HESS_REG * jnp.eye(2)
         masked_hess = free[:, None] * hess * free[None, :] + jnp.diag(1.0 - free)
@@ -324,16 +365,23 @@ def _projected_newton_polish(
         candidates = jnp.clip(
             x[None, :] + _STEP_SIZES[:, None] * direction[None, :], _LO, _HI
         )
-        candidates = jnp.concatenate([candidates, x[None, :]], axis=0)
         vals = jax.vmap(obj_at)(candidates)
         finite = jnp.isfinite(vals) & jnp.all(jnp.isfinite(candidates), axis=1)
         safe_vals = jnp.where(finite, vals, jnp.inf)
         best_idx = jnp.argmin(safe_vals)
         best_val = safe_vals[best_idx]
         improved = jnp.isfinite(best_val) & (best_val < f_cur - 1e-14)
-        return jnp.where(improved, candidates[best_idx], x)
+        x_next = jnp.where(improved, candidates[best_idx], x)
+        f_next = jnp.where(improved, best_val, f_cur)
+        g_next = jax.lax.cond(
+            improved,
+            lambda: jax.grad(obj_at)(x_next),
+            lambda: g_cur,
+        )
+        return (x_next, f_next, g_next)
 
-    return jax.lax.fori_loop(0, _POLISH_ITERS, body, start)
+    x_opt, _, _ = jax.lax.fori_loop(0, _POLISH_ITERS, body, (start, f0, g0))
+    return x_opt
 
 
 def _lbfgs_solve(
@@ -474,6 +522,7 @@ def optimise_midterm_multi(
     return x_opt[0], x_opt[1]
 
 
+@functools.partial(jax.jit, static_argnames=("solver_kind",))
 def pmodel_hydraulics_numerical(
     tc: jax.Array,
     ppfd: jax.Array,
@@ -490,7 +539,7 @@ def pmodel_hydraulics_numerical(
     gamma_cost: float = 0.5,
     kphio: float = KPHIO,
     solver_kind: PhydroOptimizer = DEFAULT_PHYDRO_OPTIMIZER,
-) -> dict[str, jax.Array]:
+) -> PModelHydraulicsResult:
     """Full P-Hydro solver: compute optimal photosynthesis-hydraulics state.
 
     Port of pmodel_hydraulics_numerical from phydro_mod.f90.
@@ -565,14 +614,14 @@ def pmodel_hydraulics_numerical(
     chi = ci / par_photosynth.ca
     chi_jmax_lim = jnp.float64(0.0)
 
-    return {
-        "jmax": jmax,
-        "dpsi": dpsi,
-        "gs": gs,
-        "aj": aj,
-        "ci": ci,
-        "chi": chi,
-        "vcmax": vcmax,
-        "profit": profit,
-        "chi_jmax_lim": chi_jmax_lim,
-    }
+    return PModelHydraulicsResult(
+        jmax=jmax,
+        dpsi=dpsi,
+        gs=gs,
+        aj=aj,
+        ci=ci,
+        chi=chi,
+        vcmax=vcmax,
+        profit=profit,
+        chi_jmax_lim=chi_jmax_lim,
+    )

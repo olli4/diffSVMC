@@ -10,6 +10,17 @@ import jax.numpy as jnp
 from typing import NamedTuple
 
 
+_VISCOSITY_H = jnp.array([
+    [0.520094, 0.0850895, -1.08374, -0.289555, 0.0, 0.0],
+    [0.222531, 0.999115, 1.88797, 1.26613, 0.0, 0.120573],
+    [-0.281378, -0.906851, -0.772479, -0.489837, -0.25704, 0.0],
+    [0.161913, 0.257399, 0.0, 0.0, 0.0, 0.0],
+    [-0.0325372, 0.0, 0.0, 0.0698452, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.00872102, 0.0],
+    [0.0, 0.0, 0.0, -0.00435673, 0.0, -0.000593264],
+], dtype=jnp.float64)
+
+
 # ── Parameter structures ──────────────────────────────────────────────
 
 
@@ -133,28 +144,18 @@ def viscosity_h2o(tc: jax.Array, patm: jax.Array) -> jax.Array:
     mu0_denom = 1.67752 + 2.20462 / tbar + 0.6366564 / tbar**2 - 0.241605 / tbar**3
     mu0 = 1e2 * jnp.sqrt(tbar) / mu0_denom
 
-    # Table 3 coefficients
-    h = jnp.array([
-        [0.520094, 0.0850895, -1.08374, -0.289555, 0.0, 0.0],
-        [0.222531, 0.999115, 1.88797, 1.26613, 0.0, 0.120573],
-        [-0.281378, -0.906851, -0.772479, -0.489837, -0.25704, 0.0],
-        [0.161913, 0.257399, 0.0, 0.0, 0.0, 0.0],
-        [-0.0325372, 0.0, 0.0, 0.0698452, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 0.0, 0.00872102, 0.0],
-        [0.0, 0.0, 0.0, -0.00435673, 0.0, -0.000593264],
-    ])
-
     ctbar = 1.0 / tbar - 1.0
     rbar_m1 = rbar - 1.0
 
-    # Vectorized double sum
-    mu1_sum = 0.0
-    for i in range(6):
-        ctbar_pow = ctbar ** i
-        coef2 = 0.0
-        for j in range(7):
-            coef2 = coef2 + h[j, i] * rbar_m1 ** j
-        mu1_sum = mu1_sum + ctbar_pow * coef2
+    # Vectorised mu1 sum — replaces nested fori_loops with array ops.
+    # Power vectors via sequential cumprod (matches original loop
+    # accumulation order for floating-point reproducibility).
+    _one64 = jnp.ones(1, dtype=jnp.float64)
+    rbar_pows = jnp.cumprod(jnp.concatenate([_one64, jnp.full(6, rbar_m1)]))
+    ctbar_pows = jnp.cumprod(jnp.concatenate([_one64, jnp.full(5, ctbar)]))
+    # coefs[i] = sum_j H[j,i] * rbar_m1^j   (inner polynomial per column)
+    coefs = _VISCOSITY_H.T @ rbar_pows          # (6,)
+    mu1_sum = jnp.dot(ctbar_pows, coefs)
 
     mu1 = jnp.exp(rbar * mu1_sum)
     return mu0 * mu1 * mu_ast

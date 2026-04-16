@@ -11,11 +11,32 @@ The implementation uses jnp.where for all conditional branches to
 maintain JAX differentiability.
 """
 
+import functools
+from typing import NamedTuple
+
+import jax
 import jax.numpy as jnp
 
 _SPD = 3600.0 * 24.0  # seconds per day
 
 
+class InvertAllocResult(NamedTuple):
+    """Typed inversion result container with backward-compatible key access."""
+
+    delta_lai: jnp.ndarray
+    litter_cleaf: jnp.ndarray
+    cleaf: jnp.ndarray
+    cratio_leaf: jnp.ndarray
+    cratio_root: jnp.ndarray
+    turnover_cleaf: jnp.ndarray
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return getattr(self, item)
+        return tuple.__getitem__(self, item)
+
+
+@functools.partial(jax.jit, static_argnames=())
 def invert_alloc(
     delta_lai, leaf_rdark_day, temp_day, gpp_day,
     litter_cleaf_in, cleaf, cstem,
@@ -53,7 +74,7 @@ def invert_alloc(
         pheno_stage: 1=growth (active), 2=dormancy (no-op).
 
     Returns:
-        Dict with keys: delta_lai, litter_cleaf, cleaf,
+        InvertAllocResult with fields: delta_lai, litter_cleaf, cleaf,
         cratio_leaf, cratio_root, turnover_cleaf.
     """
     spd = _SPD
@@ -122,11 +143,11 @@ def invert_alloc(
     out_turnover = jnp.where(is_opt2, turnover_cleaf_2, turnover_cleaf)
 
     # ===== INACTIVE (pheno_stage != 1): pass through =====
-    return {
-        "delta_lai": delta_lai,  # never modified
-        "litter_cleaf": jnp.where(is_active, out_litter_cleaf, litter_cleaf_in),
-        "cleaf": jnp.where(is_active, out_cleaf, cleaf),
-        "cratio_leaf": jnp.where(is_active, out_cratio_leaf, cratio_leaf),
-        "cratio_root": jnp.where(is_active, out_cratio_root, cratio_root),
-        "turnover_cleaf": jnp.where(is_active, out_turnover, turnover_cleaf),
-    }
+    return InvertAllocResult(
+        delta_lai=delta_lai,  # never modified
+        litter_cleaf=jnp.where(is_active, out_litter_cleaf, litter_cleaf_in),
+        cleaf=jnp.where(is_active, out_cleaf, cleaf),
+        cratio_leaf=jnp.where(is_active, out_cratio_leaf, cratio_leaf),
+        cratio_root=jnp.where(is_active, out_cratio_root, cratio_root),
+        turnover_cleaf=jnp.where(is_active, out_turnover, turnover_cleaf),
+    )
