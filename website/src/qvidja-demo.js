@@ -1,4 +1,4 @@
-import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
+import { WebR } from "https://webr.r-wasm.org/v0.5.9/webr.mjs";
 import {
   buildJaxInputs,
   getDefaultWebsiteControls,

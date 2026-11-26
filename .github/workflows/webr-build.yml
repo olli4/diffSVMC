@@ -43,7 +43,7 @@ jobs:
       - name: Build WASM package
         uses: addnab/docker-run-action@v3
         with:
-          image: ghcr.io/r-wasm/webr:main
+          image: ghcr.io/r-wasm/webr:v0.5.9
           options: -v ${{ github.workspace }}:/work -w /work
           run: |
             mkdir -p repo

@@ -70,7 +70,7 @@ $DOCKER run --rm \
   -e HOME=/tmp \
   -v "$REPO_ROOT":/work \
   -w /work \
-  ghcr.io/r-wasm/webr:main \
+  ghcr.io/r-wasm/webr:v0.5.9 \
   bash -c '
     mkdir -p /tmp/repo
     Rscript -e "rwasm::add_pkg(\"local::packages/svmc-webr\", repo_dir = \"/tmp/repo\")"
